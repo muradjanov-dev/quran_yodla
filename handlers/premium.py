@@ -144,57 +144,19 @@ async def admin_approve_request(update: Update, context: ContextTypes.DEFAULT_TY
     await query.message.reply_text(f"✅ Premium tasdiqlandi. User {user_id}, tugash: {expiry_str}")
 
 
-async def admin_reject_init(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if query.from_user.id != ADMIN_ID:
-        return
-    req_id = query.data.replace("admin_reject_", "")
-    context.user_data["reject_req_id"] = req_id
-    await query.message.reply_text("Rad etish sababini yozing:")
-    from config import ADMIN_REJECT_REASON
-    return ADMIN_REJECT_REASON
-
-
-async def admin_reject_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reason  = update.message.text.strip()
-    req_id  = context.user_data.pop("reject_req_id", None)
-    if not req_id:
-        return
-    req = get_premium_request(req_id)
-    if not req:
-        await update.message.reply_text("So'rov topilmadi.")
-        return
-    update_premium_request(req_id, {
-        "status":           "rejected",
-        "rejection_reason": reason,
-    })
-    try:
-        await context.bot.send_message(
-            chat_id = req["user_id"],
-            text    = premium_rejected_message(reason)
-        )
-    except Exception:
-        pass
-    await update.message.reply_text("❌ Rad etish yuborildi.")
-    from config import ADMIN_REJECT_REASON
-    return ConversationHandler.END
-
 
 def build_premium_handler() -> ConversationHandler:
-    from config import ADMIN_REJECT_REASON
     return ConversationHandler(
         entry_points=[
             MessageHandler(filters.Regex("^💎 Premium$"), show_premium_menu),
-            CallbackQueryHandler(show_premium_menu, pattern="^open_premium$"),
+            CallbackQueryHandler(show_premium_menu,  pattern="^open_premium$"),
+            # Receipt entry: clicking the button starts the receipt flow
+            CallbackQueryHandler(receipt_prompt,     pattern="^premium_send_receipt$"),
         ],
         states={
             PREMIUM_AWAIT_RECEIPT: [
                 MessageHandler(filters.PHOTO, receipt_received),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receipt_received),
-            ],
-            ADMIN_REJECT_REASON: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_reject_reason),
             ],
         },
         fallbacks=[CommandHandler("start", lambda u, c: ConversationHandler.END)],
@@ -206,6 +168,4 @@ def build_premium_handler() -> ConversationHandler:
 
 def register_premium_callbacks(app):
     app.add_handler(CallbackQueryHandler(trial_activate,        pattern="^premium_trial$"))
-    app.add_handler(CallbackQueryHandler(receipt_prompt,        pattern="^premium_send_receipt$"))
     app.add_handler(CallbackQueryHandler(admin_approve_request, pattern="^admin_approve_"))
-    app.add_handler(CallbackQueryHandler(admin_reject_init,     pattern="^admin_reject_"))

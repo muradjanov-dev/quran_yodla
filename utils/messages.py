@@ -32,6 +32,8 @@ def onboarding_step_0() -> str:
     return (
         "🕌 Assalomu alaykum! Quron Yodlaymiz botiga xush kelibsiz!\n\n"
         "Bu bot sizga Qur'oni Karimni ilmiy va samarali usulda yodlashga yordam beradi.\n\n"
+        "Loyiha millionlab insonlarga foyda keltirishi uchun tinmay yaxshilanib boramiz "
+        "in shaa ALLOH, duolaringizdan umidvormiz 🤲\n\n"
         "Boshlash uchun bir necha savolga javob bering 👇"
     )
 
@@ -110,8 +112,7 @@ def accumulation_message(ayahs: list) -> str:
         "──────────────────\n"
     ]
     for i, a in enumerate(ayahs, 1):
-        lines.append(f"{i}. {a['arabic']}")
-        lines.append(f"   📝 {a['uzbek']}\n")
+        lines.append(f"{i}. {a['arabic']}\n")
     lines.append("──────────────────")
     lines.append(f"🔄 Barcha {n} oyatni birga 5 marotaba o'qing")
     lines.append("──────────────────")

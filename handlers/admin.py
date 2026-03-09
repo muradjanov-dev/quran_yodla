@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 
 from config import (
-    ADMIN_ID, ADMIN_BROADCAST, ADMIN_USER_SEARCH,
+    ADMIN_ID, ADMIN_BROADCAST, ADMIN_USER_SEARCH, ADMIN_REJECT_REASON,
     ADMIN_AYAH_PHOTO_SURAH, ADMIN_AYAH_PHOTO_AYAH, ADMIN_AYAH_PHOTO_UPLOAD,
     ADMIN_NOTIF_TIME,
 )
@@ -18,11 +18,17 @@ from services.firebase_service import (
     get_user, get_pending_premium_requests, get_all_users,
     set_ayah_photo, delete_ayah_photo,
     get_notification_time, set_notification_time,
+    get_premium_request, update_premium_request,
 )
 from services.stats_service import get_bot_wide_stats
 from services.premium_service import activate_premium, deactivate_premium
-from utils.keyboards import admin_main_keyboard, admin_user_actions_keyboard
-from utils.messages import admin_menu_message, admin_user_info_message
+from utils.keyboards import (
+    admin_main_keyboard, admin_user_actions_keyboard, broadcast_confirm_keyboard,
+)
+from utils.messages import (
+    admin_menu_message, admin_user_info_message,
+    premium_rejected_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,16 +148,22 @@ async def admin_broadcast_init(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
 
-async def admin_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Sends the broadcast. Called by the group=-1 interceptor."""
-    users     = get_all_users()
-    success   = 0
-    failed    = 0
-    from_chat = update.effective_chat.id
-    msg_id    = update.message.message_id
-    logger.info(f"Broadcast started: {len(users)} users, from_chat={from_chat}, msg_id={msg_id}")
-    progress_msg = await update.message.reply_text(f"⏳ Xabar yuborilmoqda... {len(users)} ta user")
+async def admin_broadcast_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin confirmed broadcast — send to all users."""
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        return
+    from_chat = context.user_data.pop("_bcast_from_chat", None)
+    msg_id    = context.user_data.pop("_bcast_msg_id",    None)
+    if not from_chat or not msg_id:
+        await query.message.edit_text("❌ Xabar topilmadi. Qaytadan urinib ko'ring.")
+        return
 
+    await query.message.edit_text("⏳ Xabar yuborilmoqda...")
+    users   = get_all_users()
+    success = 0
+    failed  = 0
     import asyncio
     for user in users:
         uid = user.get("telegram_id")
@@ -169,8 +181,99 @@ async def admin_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYP
             failed += 1
         await asyncio.sleep(0.05)
 
-    await progress_msg.edit_text(
+    await query.message.edit_text(
         f"✅ Muvaffaqiyatli: {success}\n❌ Xato (bloklagan): {failed}"
+    )
+
+
+async def admin_broadcast_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin cancelled the broadcast."""
+    query = update.callback_query
+    await query.answer()
+    context.user_data.pop("_bcast_from_chat", None)
+    context.user_data.pop("_bcast_msg_id",    None)
+    await query.message.edit_text("❌ Xabar yuborish bekor qilindi.")
+
+
+# ─── Admin Reject (moved from premium.py) ─────────────────────────────────────
+
+async def admin_reject_init(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.from_user.id != ADMIN_ID:
+        return
+    req_id = query.data.replace("admin_reject_", "")
+    context.user_data["_reject_req_id"] = req_id
+    await query.message.reply_text("❌ Rad etish sababini yozing:")
+    return ADMIN_REJECT_REASON
+
+
+async def admin_reject_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    reason = update.message.text.strip()
+    req_id = context.user_data.pop("_reject_req_id", None)
+    if not req_id:
+        return ConversationHandler.END
+    req = get_premium_request(req_id)
+    if not req:
+        await update.message.reply_text("So'rov topilmadi.")
+        return ConversationHandler.END
+    update_premium_request(req_id, {
+        "status":           "rejected",
+        "rejection_reason": reason,
+    })
+    try:
+        await context.bot.send_message(
+            chat_id = req["user_id"],
+            text    = premium_rejected_message(reason)
+        )
+    except Exception:
+        pass
+    await update.message.reply_text("✅ Rad etish yuborildi.")
+    return ConversationHandler.END
+
+
+async def admin_all_users_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show all users with name + profile link, paginated 20 per page."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+
+    # Parse page number from callback_data: "admin_users_0", "admin_users_1" ...
+    parts = query.data.split("_")
+    page = int(parts[-1]) if parts[-1].isdigit() else 0
+
+    users     = get_all_users()
+    page_size = 20
+    total     = len(users)
+    start     = page * page_size
+    end       = min(start + page_size, total)
+
+    lines = [f"👥 FOYDALANUVCHILAR ({start+1}–{end} / {total} ta)\n"]
+    for i, u in enumerate(users[start:end], start + 1):
+        uid      = u.get("telegram_id", 0)
+        name     = (u.get("full_name") or "Anonim")[:20]
+        username = f"@{u['username']}" if u.get("username") else "—"
+        lines.append(f"{i}. [{name}](tg://user?id={uid}) | {username}")
+
+    text = "\n".join(lines)
+
+    # Pagination buttons
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    row = []
+    if page > 0:
+        row.append(InlineKeyboardButton("⬅️ Oldingi", callback_data=f"admin_users_{page-1}"))
+    if end < total:
+        row.append(InlineKeyboardButton("Keyingi ➡️", callback_data=f"admin_users_{page+1}"))
+    keyboard = InlineKeyboardMarkup([row]) if row else None
+
+    await query.message.reply_text(
+        text,
+        parse_mode            = "Markdown",
+        reply_markup          = keyboard,
+        disable_web_page_preview = True,
     )
 
 
@@ -321,10 +424,11 @@ def build_admin_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("admin", cmd_admin),
-            # Callback buttons from admin menu enter the conversation
             CallbackQueryHandler(admin_user_mgmt_callback, pattern="^admin_user_mgmt$"),
             CallbackQueryHandler(admin_ayah_photo_init,    pattern="^admin_ayah_photo$"),
             CallbackQueryHandler(admin_notif_time_init,    pattern="^admin_notif_time$"),
+            # Premium reject — admin clicks Rad etish on receipt photo
+            CallbackQueryHandler(admin_reject_init,        pattern="^admin_reject_"),
         ],
         states={
             ADMIN_USER_SEARCH: [
@@ -343,6 +447,9 @@ def build_admin_handler() -> ConversationHandler:
             ADMIN_NOTIF_TIME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_notif_time_set),
             ],
+            ADMIN_REJECT_REASON: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_reject_reason),
+            ],
         },
         fallbacks=[CommandHandler("start", lambda u, c: ConversationHandler.END)],
         allow_reentry=True,
@@ -352,7 +459,7 @@ def build_admin_handler() -> ConversationHandler:
 
 
 async def _admin_broadcast_interceptor(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """group=-1 interceptor: handles admin broadcast before ConversationHandlers."""
+    """group=-1 interceptor: catches admin's broadcast message and asks for confirmation."""
     from telegram.ext import ApplicationHandlerStop
     if update.effective_user is None or update.effective_user.id != ADMIN_ID:
         return
@@ -360,16 +467,61 @@ async def _admin_broadcast_interceptor(update: Update, context: ContextTypes.DEF
         return
     if not update.message:
         return
+    # Store message reference for confirmed send
     context.user_data.pop("_bcast", None)
-    await admin_broadcast_send(update, context)
+    context.user_data["_bcast_from_chat"] = update.effective_chat.id
+    context.user_data["_bcast_msg_id"]    = update.message.message_id
+    users = get_all_users()
+    await update.message.reply_text(
+        f"📢 TASDIQLASH\n\n"
+        f"Yuqoridagi xabar {len(users)} ta foydalanuvchiga yuboriladi.\n\n"
+        f"Davom etasizmi?",
+        reply_markup=broadcast_confirm_keyboard(),
+    )
+    raise ApplicationHandlerStop
+
+
+async def _admin_reply_interceptor(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """group=-1 interceptor: forwards admin reply to a specific user."""
+    from telegram.ext import ApplicationHandlerStop
+    if update.effective_user is None or update.effective_user.id != ADMIN_ID:
+        return
+    target_id = context.user_data.get("_reply_to")
+    if not target_id:
+        return
+    if not update.message:
+        return
+    context.user_data.pop("_reply_to", None)
+    try:
+        await context.bot.copy_message(
+            chat_id      = target_id,
+            from_chat_id = update.effective_chat.id,
+            message_id   = update.message.message_id,
+        )
+        await context.bot.send_message(
+            target_id,
+            "📩 Admin javob berdi. Yana savol bo'lsa — /start → 📞 Murojaat"
+        )
+        await update.message.reply_text(f"✅ Javob {target_id} ga yuborildi.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Yuborishda xato: {e}")
     raise ApplicationHandlerStop
 
 
 def register_admin_callbacks(app):
-    # Broadcast: direct callback sets flag, group=-1 message handler executes
-    app.add_handler(CallbackQueryHandler(admin_broadcast_init, pattern="^admin_broadcast$"))
+    # Users list with pagination
+    app.add_handler(CallbackQueryHandler(admin_all_users_callback, pattern="^admin_users_"))
+    # Broadcast: flag → group=-1 intercept → confirmation buttons → send
+    app.add_handler(CallbackQueryHandler(admin_broadcast_init,    pattern="^admin_broadcast$"))
+    app.add_handler(CallbackQueryHandler(admin_broadcast_confirm, pattern="^broadcast_confirm$"))
+    app.add_handler(CallbackQueryHandler(admin_broadcast_cancel,  pattern="^broadcast_cancel$"))
+    # group=-1: admin message interceptors (broadcast preview, contact reply)
     app.add_handler(
         MessageHandler(filters.ALL & ~filters.COMMAND, _admin_broadcast_interceptor),
+        group=-1,
+    )
+    app.add_handler(
+        MessageHandler(filters.ALL & ~filters.COMMAND, _admin_reply_interceptor),
         group=-1,
     )
     app.add_handler(CallbackQueryHandler(admin_stats_callback,            pattern="^admin_stats$"))

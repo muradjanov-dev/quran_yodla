@@ -15,6 +15,7 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
             ["📗 Yodlash",  "📊 Sahifam"],
             ["🎧 Tinglash", "🏆 Reyting"],
             ["💎 Premium",  "👥 Do'st taklif"],
+            ["📞 Murojaat"],
         ],
         resize_keyboard=True,
     )
@@ -252,6 +253,7 @@ def referral_share_keyboard(ref_link: str) -> InlineKeyboardMarkup:
 def admin_main_keyboard(pending_count: int = 0, notif_time: str = "08:00") -> InlineKeyboardMarkup:
     premium_label = f"📋 Premium so'rovlar ({pending_count} ta kutilmoqda)" if pending_count else "📋 Premium so'rovlar"
     return InlineKeyboardMarkup([
+        [InlineKeyboardButton("👥 Barcha foydalanuvchilar",      callback_data="admin_users_0")],
         [InlineKeyboardButton("👤 User boshqarish",              callback_data="admin_user_mgmt")],
         [InlineKeyboardButton("💎 Premium berish",               callback_data="admin_give_premium")],
         [InlineKeyboardButton("📢 Xabar yuborish",               callback_data="admin_broadcast")],
@@ -287,4 +289,17 @@ def snooze_keyboard() -> InlineKeyboardMarkup:
 def open_memorize_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("📗 Yodlashni boshlash", callback_data="open_memorize")
+    ]])
+
+
+def broadcast_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Ha, yuborish",   callback_data="broadcast_confirm"),
+        InlineKeyboardButton("❌ Bekor qilish",   callback_data="broadcast_cancel"),
+    ]])
+
+
+def contact_reply_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("↩️ Javob qaytarish", callback_data=f"contact_reply_{user_id}"),
     ]])

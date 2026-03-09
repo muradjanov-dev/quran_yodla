@@ -117,3 +117,6 @@ ADMIN_AYAH_PHOTO_UPLOAD = 52
 
 # Admin notification time
 ADMIN_NOTIF_TIME = 53
+
+# Contact Admin
+CONTACT_AWAIT_MSG = 60

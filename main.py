@@ -48,6 +48,7 @@ from handlers.profile  import register_profile_handlers
 from handlers.leaderboard import register_leaderboard_handlers
 from handlers.referral import register_referral_handlers
 from handlers.notifications import register_notification_handlers, send_daily_notifications
+from handlers.contact import build_contact_handler, register_contact_callbacks
 
 logging.basicConfig(
     format="%(asctime)s — %(name)s — %(levelname)s — %(message)s",
@@ -134,6 +135,7 @@ def build_application(post_init=None) -> Application:
     application.add_handler(build_premium_handler())
     application.add_handler(build_admin_handler())
     application.add_handler(build_listen_handler())
+    application.add_handler(build_contact_handler())
 
     # Simple handlers
     register_profile_handlers(application)
@@ -142,6 +144,7 @@ def build_application(post_init=None) -> Application:
     register_notification_handlers(application)
     register_premium_callbacks(application)
     register_admin_callbacks(application)
+    register_contact_callbacks(application)
 
     return application
 

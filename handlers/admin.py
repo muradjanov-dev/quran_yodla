@@ -255,6 +255,10 @@ def build_admin_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("admin", cmd_admin),
+            # Callback buttons from admin menu enter the conversation
+            CallbackQueryHandler(admin_user_mgmt_callback, pattern="^admin_user_mgmt$"),
+            CallbackQueryHandler(admin_broadcast_init,     pattern="^admin_broadcast$"),
+            CallbackQueryHandler(admin_ayah_photo_init,    pattern="^admin_ayah_photo$"),
         ],
         states={
             ADMIN_USER_SEARCH: [
@@ -282,11 +286,9 @@ def build_admin_handler() -> ConversationHandler:
 
 
 def register_admin_callbacks(app):
-    app.add_handler(CallbackQueryHandler(admin_stats_callback,          pattern="^admin_stats$"))
-    app.add_handler(CallbackQueryHandler(admin_user_mgmt_callback,      pattern="^admin_user_mgmt$"))
-    app.add_handler(CallbackQueryHandler(admin_broadcast_init,          pattern="^admin_broadcast$"))
-    app.add_handler(CallbackQueryHandler(admin_pending_requests_callback,pattern="^admin_pending_requests$"))
-    app.add_handler(CallbackQueryHandler(admin_prem30_callback,         pattern="^admin_prem30_"))
-    app.add_handler(CallbackQueryHandler(admin_prem7_callback,          pattern="^admin_prem7_"))
-    app.add_handler(CallbackQueryHandler(admin_rem_prem_callback,       pattern="^admin_rem_prem_"))
-    app.add_handler(CallbackQueryHandler(admin_ayah_photo_init,         pattern="^admin_ayah_photo$"))
+    # Note: admin_user_mgmt, admin_broadcast, admin_ayah_photo are in ConversationHandler entry_points
+    app.add_handler(CallbackQueryHandler(admin_stats_callback,           pattern="^admin_stats$"))
+    app.add_handler(CallbackQueryHandler(admin_pending_requests_callback, pattern="^admin_pending_requests$"))
+    app.add_handler(CallbackQueryHandler(admin_prem30_callback,          pattern="^admin_prem30_"))
+    app.add_handler(CallbackQueryHandler(admin_prem7_callback,           pattern="^admin_prem7_"))
+    app.add_handler(CallbackQueryHandler(admin_rem_prem_callback,        pattern="^admin_rem_prem_"))

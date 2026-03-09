@@ -90,13 +90,13 @@ async def juz_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return MEMO_SELECT_DIRECTION
     else:
         context.user_data["direction"] = "forward"
-        db_user = get_user(query.from_user.id)
-        premium = is_premium(db_user)
+        context.user_data["reciter"] = "husary"
+        surahs = get_surahs_in_juz(juz_number)
         await query.message.reply_text(
-            "🎙️ Qori tanlang:",
-            reply_markup=reciter_keyboard(for_memorize=True, is_premium=premium)
+            f"📖 {juz_number}-juz tanlandi\n\nBoshlash uchun tugmani bosing yoki surani tanlang:",
+            reply_markup=surah_selection_keyboard(surahs)
         )
-        return MEMO_SELECT_RECITER
+        return MEMO_SELECT_SURAH
 
 
 async def direction_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,10 +104,16 @@ async def direction_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     direction = "forward" if query.data == "dir_forward" else "backward"
     context.user_data["direction"] = direction
-    db_user = get_user(query.from_user.id)
-    premium = is_premium(db_user)
-    await query.message.reply_text("🎙️ Qori tanlang:", reply_markup=reciter_keyboard(for_memorize=True, is_premium=premium))
-    return MEMO_SELECT_RECITER
+    context.user_data["reciter"] = "husary"
+    juz_number = context.user_data.get("juz_number")
+    surahs = get_surahs_in_juz(juz_number)
+    if direction == "backward":
+        surahs = list(reversed(surahs))
+    await query.message.reply_text(
+        "📖 Boshlash uchun tugmani bosing yoki surani tanlang:",
+        reply_markup=surah_selection_keyboard(surahs)
+    )
+    return MEMO_SELECT_SURAH
 
 
 async def reciter_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -176,6 +182,11 @@ async def surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return ConversationHandler.END
 
+    # Close any existing active sessions to prevent conflicts
+    existing = get_active_session(user_id)
+    if existing:
+        close_session(existing["session_id"])
+
     # Create session
     session = create_session(
         user_id     = user_id,
@@ -215,6 +226,12 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
     total_ayahs = surah_info["ayah_count"] if surah_info else 999
 
     step_msgs = []  # message IDs to delete after ayah is completed
+
+    # Bismillah for first ayah (except Fatiha=1 which already has it, and Tawba=9 which has none)
+    if next_index == 1 and surah_num not in (1, 9):
+        bismillah = "﷽\nبِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+        m = await bot.send_message(chat_id, bismillah)
+        step_msgs.append(m.message_id)
 
     # Header
     m = await bot.send_message(chat_id, ayah_header(surah_name, surah_num, next_index, total_ayahs))
@@ -296,7 +313,10 @@ async def rep_3_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = query.from_user.id
     chat_id = query.message.chat_id
-    session = context.user_data.get("session", {})
+    session = await _recover_session(context, query.from_user.id)
+    if not session.get("session_id"):
+        await context.bot.send_message(chat_id, "Sessiya topilmadi. Qaytadan boshlang.")
+        return ConversationHandler.END
 
     level_up = award_points(user_id, points_for_repetition(3), "rep_3")
     if level_up:
@@ -327,7 +347,10 @@ async def rep_7_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = query.from_user.id
     chat_id = query.message.chat_id
-    session = context.user_data.get("session", {})
+    session = await _recover_session(context, query.from_user.id)
+    if not session.get("session_id"):
+        await context.bot.send_message(chat_id, "Sessiya topilmadi. Qaytadan boshlang.")
+        return ConversationHandler.END
 
     level_up = award_points(user_id, points_for_repetition(7), "rep_7")
     if level_up:
@@ -353,7 +376,10 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
     chat_id = query.message.chat_id
-    session = context.user_data.get("session", {})
+    session = await _recover_session(context, query.from_user.id)
+    if not session.get("session_id"):
+        await context.bot.send_message(chat_id, "Sessiya topilmadi. Qaytadan boshlang.")
+        return ConversationHandler.END
 
     # Delete button message + header/audio/photo
     await _cleanup_step(context, query)
@@ -385,6 +411,7 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "session_ayahs_count": len(acc),
     })
     session["accumulated_ayahs"] = acc
+    context.user_data["session"] = session
 
     # Free user daily limit check
     db_user = get_user(user_id)
@@ -438,7 +465,10 @@ async def accumulation_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
     chat_id = query.message.chat_id
-    session = context.user_data.get("session", {})
+    session = await _recover_session(context, query.from_user.id)
+    if not session.get("session_id"):
+        await context.bot.send_message(chat_id, "Sessiya topilmadi. Qaytadan boshlang.")
+        return ConversationHandler.END
 
     # Delete the accumulation button message and acc audio messages
     try:
@@ -522,6 +552,18 @@ async def handle_limit_reached_premium(update: Update, context: ContextTypes.DEF
     # Import open_premium handler
     from handlers.premium import show_premium_menu
     await show_premium_menu(update, context)
+
+
+async def _recover_session(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> dict:
+    """Get session from context; if missing, recover from Firestore."""
+    session = context.user_data.get("session")
+    if session and session.get("session_id") and session.get("surah_number"):
+        return session
+    # Try Firestore recovery
+    session = get_active_session(user_id)
+    if session:
+        context.user_data["session"] = session
+    return session or {}
 
 
 def build_memorize_handler() -> ConversationHandler:

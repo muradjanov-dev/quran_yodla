@@ -233,25 +233,24 @@ async def run_health_server():
 
 async def run_polling_async():
     """Polling mode with background health server for Railway healthchecks."""
-    # Start health server in background
     await run_health_server()
 
     application = build_application()
 
-    await application.initialize()
-    await application.bot.set_my_commands([
-        BotCommand("start", "Boshlash / Asosiy menyu"),
-        BotCommand("admin", "Admin panel"),
-    ])
-    setup_scheduler(application)
-    await notify_admin_startup(application.bot, "polling")
+    async with application:
+        await application.bot.set_my_commands([
+            BotCommand("start", "Boshlash / Asosiy menyu"),
+            BotCommand("admin", "Admin panel"),
+        ])
+        setup_scheduler(application)
+        await notify_admin_startup(application.bot, "polling")
 
-    await application.start()
-    logger.info("Starting bot in polling mode...")
-
-    async with application.updater:
+        await application.start()
+        logger.info("Starting bot in polling mode...")
         await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
         await asyncio.Event().wait()  # run forever
+        await application.updater.stop()
+        await application.stop()
 
 
 # ─── Entry Point ──────────────────────────────────────────────────────────────

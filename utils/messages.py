@@ -284,8 +284,8 @@ def premium_menu_message(is_active: bool, expiry: Optional[str]) -> str:
         f"──────────────────\n"
         f"TO'LOV:\n"
         f"💳 5614 6830 0539 3277\n"
-        f"👤 M.Nodirjon\n\n"
-        f"🎁 Har bir premium imkoniyati bo'lmagan bo'lajak qorilar uchun Bepul Quron yodlash funksiya va imkoniyatlari ko'payishiga va loyihani rivojlanishiga yordam beradi"
+        f"👤 M.N.\n\n"
+        f"🎁 Har bir premium, imkoniyati bo'lmagan bo'lajak qorilar uchun Bepul Quron yodlash funksiya va imkoniyatlari ko'payishiga va loyihani rivojlanishiga yordam beradi"
         f"To'lov qilgach, chekni yuboring 👇"
     )
 
@@ -327,6 +327,7 @@ def admin_menu_message(stats: dict) -> str:
         f"👥 Jami foydalanuvchilar: {stats['total_users']:,}\n"
         f"💎 Premium foydalanuvchilar: {stats['premium_users']}\n"
         f"📈 Bugun qo'shilganlar: {stats['new_today']}\n"
+        f"✅ Bugun faol: {stats.get('active_today', 0)}\n"
         f"🔥 Faol (7 kun): {stats['active_7d']}\n"
         f"──────────────────────"
     )
@@ -335,17 +336,38 @@ def admin_menu_message(stats: dict) -> str:
 def admin_user_info_message(user: dict) -> str:
     stats      = user.get("stats", {})
     premium    = user.get("premium", {})
-    prem_label = "Ha (faol)" if premium.get("is_active") else "Yoq"
+    prem_label = "✅ Ha (faol)" if premium.get("is_active") else "❌ Yoq"
+    prem_exp   = premium.get("expiry_date", "")
+    from datetime import datetime as _dt
+    reg_date   = user.get("registration_date")
+    reg_str    = reg_date.strftime("%d.%m.%Y") if isinstance(reg_date, _dt) else str(reg_date or "—")
+    last_act   = stats.get("last_activity_date")
+    last_str   = last_act.strftime("%d.%m.%Y %H:%M") if isinstance(last_act, _dt) else str(last_act or "—")
+    total_mins = stats.get("total_minutes", 0)
+    hours      = total_mins // 60
+    mins       = total_mins % 60
+    time_str   = f"{hours}s {mins}d" if hours else f"{mins} daqiqa"
+    username   = f"@{user['username']}" if user.get("username") else "—"
+    uid        = user.get("telegram_id", "—")
     return (
-        f"FOYDALANUVCHI MA'LUMOTLARI:\n"
+        f"👤 FOYDALANUVCHI:\n"
         f"──────────────────────\n"
         f"Ism: {user.get('full_name', '—')}\n"
-        f"Username: {user.get('username', '—')}\n"
-        f"ID: {user.get('telegram_id', '—')}\n"
-        f"Premium: {prem_label}\n"
-        f"Oyatlar: {stats.get('total_verses_read', 0)}\n"
-        f"Himmat: {stats.get('himmat_points', 0):,}\n"
-        f"──────────────────────"
+        f"Username: {username}\n"
+        f"ID: {uid}\n"
+        f"Ro'yxatdan: {reg_str}\n"
+        f"Oxirgi faollik: {last_str}\n"
+        f"──────────────────────\n"
+        f"📊 STATISTIKA:\n"
+        f"📖 Jami oyatlar: {stats.get('total_verses_read', 0):,}\n"
+        f"🔄 Jami takrorlar: {stats.get('total_repetitions', 0):,}\n"
+        f"⏱ Jami vaqt: {time_str}\n"
+        f"💫 Himmat ball: {stats.get('himmat_points', 0):,}\n"
+        f"🔥 Streak: {stats.get('current_streak_days', 0)} kun\n"
+        f"──────────────────────\n"
+        f"💎 Premium: {prem_label}"
+        + (f" ({prem_exp})" if premium.get("is_active") and prem_exp else "")
+        + f"\n──────────────────────"
     )
 
 

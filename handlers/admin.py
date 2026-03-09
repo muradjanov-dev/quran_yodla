@@ -264,9 +264,20 @@ async def admin_all_users_callback(update: Update, context: ContextTypes.DEFAULT
     lines = [f"👥 FOYDALANUVCHILAR ({start+1}–{end} / {total} ta)\n"]
     for i, u in enumerate(users[start:end], start + 1):
         uid      = u.get("telegram_id", 0)
-        name     = (u.get("full_name") or "Anonim")[:20]
-        username = f"@{u['username']}" if u.get("username") else "—"
-        lines.append(f"{i}. [{name}](tg://user?id={uid}) | {username}")
+        name     = (u.get("full_name") or "Anonim")[:16]
+        username = f"@{u['username']}" if u.get("username") else ""
+        stats    = u.get("stats", {})
+        verses   = stats.get("total_verses_read", 0)
+        himmat   = stats.get("himmat_points", 0)
+        mins     = stats.get("total_minutes", 0)
+        streak   = stats.get("current_streak_days", 0)
+        prem     = "💎" if u.get("premium", {}).get("is_active") else ""
+        info     = f"📖{verses} 💫{himmat:,} ⏱{mins}d 🔥{streak}"
+        line     = f"{i}. [{name}](tg://user?id={uid}){prem}"
+        if username:
+            line += f" {username}"
+        line += f"\n    {info}"
+        lines.append(line)
 
     text = "\n".join(lines)
 

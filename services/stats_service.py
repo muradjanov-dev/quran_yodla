@@ -114,11 +114,16 @@ def get_bot_wide_stats() -> dict:
                  if u.get("stats", {}).get("last_activity_date") and
                  hasattr(u["stats"]["last_activity_date"], "astimezone") and
                  u["stats"]["last_activity_date"].astimezone(TZ) >= week_ago]
+    active_today = [u for u in users
+                    if u.get("stats", {}).get("last_activity_date") and
+                    hasattr(u["stats"]["last_activity_date"], "astimezone") and
+                    u["stats"]["last_activity_date"].astimezone(TZ).strftime("%Y-%m-%d") == today_str]
     pending_premium = get_pending_premium_requests()
     return {
         "total_users":    len(users),
         "premium_users":  len(premium_users),
         "new_today":      len(new_today),
+        "active_today":   len(active_today),
         "active_7d":      len(active_7d),
         "pending_premium":len(pending_premium),
     }

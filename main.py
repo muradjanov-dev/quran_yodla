@@ -216,19 +216,42 @@ async def notify_admin_startup(bot, mode: str):
         logger.warning(f"Could not notify admin on startup: {e}")
 
 
-def run_polling():
-    async def post_init(app: Application):
-        await app.bot.set_my_commands([
-            BotCommand("start", "Boshlash / Asosiy menyu"),
-            BotCommand("admin", "Admin panel"),
-        ])
-        setup_scheduler(app)
-        await notify_admin_startup(app.bot, "polling")
+async def run_health_server():
+    """Minimal HTTP server for Railway/Render healthchecks (polling mode only)."""
+    async def health(request):
+        return web.Response(text="OK")
 
-    application = build_application(post_init=post_init)
+    aio_app = web.Application()
+    aio_app.router.add_get("/health", health)
+    aio_app.router.add_get("/", health)
+    runner = web.AppRunner(aio_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    logger.info(f"Health server running on port {PORT}")
 
+
+async def run_polling_async():
+    """Polling mode with background health server for Railway healthchecks."""
+    # Start health server in background
+    await run_health_server()
+
+    application = build_application()
+
+    await application.initialize()
+    await application.bot.set_my_commands([
+        BotCommand("start", "Boshlash / Asosiy menyu"),
+        BotCommand("admin", "Admin panel"),
+    ])
+    setup_scheduler(application)
+    await notify_admin_startup(application.bot, "polling")
+
+    await application.start()
     logger.info("Starting bot in polling mode...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+    async with application.updater:
+        await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        await asyncio.Event().wait()  # run forever
 
 
 # ─── Entry Point ──────────────────────────────────────────────────────────────
@@ -237,5 +260,4 @@ if __name__ == "__main__":
     if WEBHOOK_URL:
         asyncio.run(run_webhook())
     else:
-        # Polling mode for local development
-        run_polling()
+        asyncio.run(run_polling_async())

@@ -256,7 +256,8 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
                                      caption=f"📖 {surah_name} — {next_index}-oyat")
             step_msgs.append(m.message_id)
         except Exception as e:
-            logger.warning(f"Ayah photo send failed: {e}")
+            logger.error(f"Ayah photo send FAILED for {surah_num}:{next_index} — file_id={photo_file_id[:20]}… — error: {e}")
+            photo_file_id = None  # mark as unavailable for this session
 
     # Text + 3x button
     await bot.send_message(
@@ -269,13 +270,14 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
     context.user_data["step_msgs"] = step_msgs
     context.user_data["chat_id"]   = chat_id
 
-    # Save ayah data to session
+    # Save ayah data to session (include photo_file_id to avoid repeated Firestore reads)
     ayah_record = {
         "arabic":        ayah_data["arabic"],
         "uzbek":         ayah_data["uzbek"],
         "global_number": ayah_data["global_number"],
         "surah_number":  surah_num,
         "ayah_number":   next_index,
+        "photo_file_id": photo_file_id,  # may be None
     }
     update_session(session["session_id"], {
         "current_ayah_index": next_index,
@@ -292,13 +294,18 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
 
 
 async def _cleanup_step(context: ContextTypes.DEFAULT_TYPE, query):
-    """Delete the button message and any tracked step messages."""
+    """Delete the button message and any tracked step messages (including mid-step photos)."""
     chat_id = query.message.chat_id
     try:
         await query.message.delete()
     except Exception:
         pass
     for mid in context.user_data.pop("step_msgs", []):
+        try:
+            await context.bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
+    for mid in context.user_data.pop("mid_msgs", []):
         try:
             await context.bot.delete_message(chat_id, mid)
         except Exception:
@@ -331,6 +338,18 @@ async def rep_3_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
     ayah_data = context.user_data.get("_cur_ayah") or session.get("current_ayah_data", {})
+    mid_msgs = context.user_data.get("mid_msgs", [])
+
+    # Re-show photo for 7x repetition
+    photo_fid = ayah_data.get("photo_file_id")
+    if photo_fid:
+        try:
+            m = await context.bot.send_photo(chat_id, photo=photo_fid)
+            mid_msgs.append(m.message_id)
+        except Exception as e:
+            logger.warning(f"Rep-7 photo send failed: {e}")
+    context.user_data["mid_msgs"] = mid_msgs
+
     await context.bot.send_message(
         chat_id,
         ayah_text_message(
@@ -371,6 +390,18 @@ async def rep_7_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
     ayah_data = context.user_data.get("_cur_ayah") or session.get("current_ayah_data", {})
+    mid_msgs = context.user_data.get("mid_msgs", [])
+
+    # Re-show photo for 11x repetition
+    photo_fid = ayah_data.get("photo_file_id")
+    if photo_fid:
+        try:
+            m = await context.bot.send_photo(chat_id, photo=photo_fid)
+            mid_msgs.append(m.message_id)
+        except Exception as e:
+            logger.warning(f"Rep-11 photo send failed: {e}")
+    context.user_data["mid_msgs"] = mid_msgs
+
     await context.bot.send_message(
         chat_id,
         ayah_text_message(

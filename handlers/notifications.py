@@ -180,6 +180,20 @@ async def handle_snooze(update: Update, context):
 
     asyncio.create_task(send_snooze())
 
+async def handle_memo_tomorrow(update, context):
+    """User taps 'Ertaga davom etish' on limit_reached message."""
+    query = update.callback_query
+    await query.answer()
+    try:
+        await query.message.edit_text(
+            "✅ Ertaga davom etamiz! In shaa ALLOH 🌙\n\n"
+            "Qolgan oyatlaringiz sizni kutmoqda 📖"
+        )
+    except Exception:
+        pass
+
+
 def register_notification_handlers(app):
     from telegram.ext import CallbackQueryHandler
-    app.add_handler(CallbackQueryHandler(handle_snooze, pattern="^snooze_2h$"))
+    app.add_handler(CallbackQueryHandler(handle_snooze,        pattern="^snooze_2h$"))
+    app.add_handler(CallbackQueryHandler(handle_memo_tomorrow, pattern="^memo_tomorrow$"))

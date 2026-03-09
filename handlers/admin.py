@@ -12,18 +12,20 @@ from telegram.ext import (
 from config import (
     ADMIN_ID, ADMIN_BROADCAST, ADMIN_USER_SEARCH, ADMIN_REJECT_REASON,
     ADMIN_AYAH_PHOTO_SURAH, ADMIN_AYAH_PHOTO_AYAH, ADMIN_AYAH_PHOTO_UPLOAD,
-    ADMIN_NOTIF_TIME,
+    ADMIN_NOTIF_TIME, ADMIN_NOTIF_COUNT,
 )
 from services.firebase_service import (
     get_user, get_pending_premium_requests, get_all_users,
     set_ayah_photo, delete_ayah_photo,
-    get_notification_time, set_notification_time,
+    get_notification_time, get_notification_settings, set_notification_time,
+    set_notification_count,
     get_premium_request, update_premium_request,
 )
 from services.stats_service import get_bot_wide_stats
 from services.premium_service import activate_premium, deactivate_premium
 from utils.keyboards import (
     admin_main_keyboard, admin_user_actions_keyboard, broadcast_confirm_keyboard,
+    admin_notif_count_keyboard,
 )
 from utils.messages import (
     admin_menu_message, admin_user_info_message,
@@ -33,31 +35,39 @@ from utils.messages import (
 logger = logging.getLogger(__name__)
 
 
+def _admin_keyboard():
+    stats = get_bot_wide_stats()
+    hour, minute, count = get_notification_settings()
+    return admin_menu_message(stats), admin_main_keyboard(
+        pending_count=stats.get("pending_premium", 0),
+        notif_time=f"{hour:02d}:{minute:02d}",
+        notif_count=count,
+    )
+
+
 async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
-        return  # silent ignore
-
-    stats   = get_bot_wide_stats()
-    pending = stats.get("pending_premium", 0)
-    hour, minute = get_notification_time()
-    await update.message.reply_text(
-        admin_menu_message(stats),
-        reply_markup=admin_main_keyboard(pending_count=pending, notif_time=f"{hour:02d}:{minute:02d}")
-    )
+        return
+    text, kb = _admin_keyboard()
+    await update.message.reply_text(text, reply_markup=kb)
 
 
 async def admin_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if query.from_user.id != ADMIN_ID:
-        await query.answer()
-        return
+        await query.answer(); return
     await query.answer()
-    stats = get_bot_wide_stats()
-    hour, minute = get_notification_time()
-    await query.message.reply_text(
-        admin_menu_message(stats),
-        reply_markup=admin_main_keyboard(stats.get("pending_premium", 0), notif_time=f"{hour:02d}:{minute:02d}")
-    )
+    text, kb = _admin_keyboard()
+    await query.message.reply_text(text, reply_markup=kb)
+
+
+async def admin_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    text, kb = _admin_keyboard()
+    await query.message.reply_text(text, reply_markup=kb)
 
 
 async def admin_user_mgmt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -243,7 +253,7 @@ async def admin_all_users_callback(update: Update, context: ContextTypes.DEFAULT
 
     # Parse page number from callback_data: "admin_users_0", "admin_users_1" ...
     parts = query.data.split("_")
-    page = int(parts[-1]) if parts[-1].isdigit() else 0
+    page: int = int(parts[-1]) if parts[-1].isdigit() else 0
 
     users     = get_all_users()
     page_size = 20
@@ -264,9 +274,9 @@ async def admin_all_users_callback(update: Update, context: ContextTypes.DEFAULT
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     row = []
     if page > 0:
-        row.append(InlineKeyboardButton("⬅️ Oldingi", callback_data=f"admin_users_{page-1}"))
+        row.append(InlineKeyboardButton("⬅️ Oldingi", callback_data="admin_users_{}".format(page - 1)))
     if end < total:
-        row.append(InlineKeyboardButton("Keyingi ➡️", callback_data=f"admin_users_{page+1}"))
+        row.append(InlineKeyboardButton("Keyingi ➡️", callback_data="admin_users_{}".format(page + 1)))
     keyboard = InlineKeyboardMarkup([row]) if row else None
 
     await query.message.reply_text(
@@ -368,6 +378,65 @@ async def admin_ayah_photo_delete(update: Update, context: ContextTypes.DEFAULT_
     await update.message.reply_text(f"✅ Sura {parts[0]}, {parts[1]}-oyat rasmi o'chirildi.")
 
 
+async def admin_notif_count_init(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    _, _, current_count = get_notification_settings()
+    await query.message.reply_text(
+        f"🔔 KUNLIK BILDIRISHNOMALAR SONI\n\n"
+        f"Hozirgi: {current_count}x kuniga\n\n"
+        f"Nechta yuborilsin? (1 dan 5 gacha)\n"
+        f"Vaqtlar base vaqtdan boshlanib teng taqsimlanadi:",
+        reply_markup=admin_notif_count_keyboard(current_count),
+    )
+    return ADMIN_NOTIF_COUNT
+
+
+async def admin_notif_count_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    count = int(query.data.split("_")[-1])
+    set_notification_count(count)
+
+    # Reschedule notification jobs in APScheduler
+    try:
+        import pytz
+        from apscheduler.triggers.cron import CronTrigger
+        scheduler = context.application.bot_data.get("scheduler")
+        if scheduler:
+            TZ = pytz.timezone("Asia/Tashkent")
+            hour, minute, _ = get_notification_settings()
+            # Remove old notification jobs
+            for i in range(5):
+                try:
+                    scheduler.remove_job(f"daily_notifications_{i}")
+                except Exception:
+                    pass
+            # Add new jobs evenly spaced
+            intervals = {1: 0, 2: 8, 3: 6, 4: 4, 5: 3}
+            interval_h = intervals.get(count, 0)
+            for i in range(count):
+                job_hour = (hour + i * interval_h) % 24
+                scheduler.add_job(
+                    context.application.bot_data["_daily_notif_fn"],
+                    CronTrigger(hour=job_hour, minute=minute, timezone=TZ),
+                    id=f"daily_notifications_{i}",
+                    replace_existing=True,
+                )
+            logger.info(f"Notification count set to {count}x")
+    except Exception as e:
+        logger.error(f"Reschedule notif count error: {e}")
+
+    await query.message.edit_text(
+        f"✅ Kunlik bildirishnomalar soni: {count}x ga o'zgartirildi!"
+    )
+    return ConversationHandler.END
+
+
 async def admin_notif_time_init(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if query.from_user.id != ADMIN_ID:
@@ -425,8 +494,10 @@ def build_admin_handler() -> ConversationHandler:
         entry_points=[
             CommandHandler("admin", cmd_admin),
             CallbackQueryHandler(admin_user_mgmt_callback, pattern="^admin_user_mgmt$"),
+            CallbackQueryHandler(admin_user_mgmt_callback, pattern="^admin_give_premium$"),
             CallbackQueryHandler(admin_ayah_photo_init,    pattern="^admin_ayah_photo$"),
             CallbackQueryHandler(admin_notif_time_init,    pattern="^admin_notif_time$"),
+            CallbackQueryHandler(admin_notif_count_init,   pattern="^admin_notif_count$"),
             # Premium reject — admin clicks Rad etish on receipt photo
             CallbackQueryHandler(admin_reject_init,        pattern="^admin_reject_"),
         ],
@@ -446,6 +517,9 @@ def build_admin_handler() -> ConversationHandler:
             ],
             ADMIN_NOTIF_TIME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_notif_time_set),
+            ],
+            ADMIN_NOTIF_COUNT: [
+                CallbackQueryHandler(admin_notif_count_set, pattern="^admin_notif_count_"),
             ],
             ADMIN_REJECT_REASON: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_reject_reason),
@@ -525,6 +599,7 @@ def register_admin_callbacks(app):
         group=-1,
     )
     app.add_handler(CallbackQueryHandler(admin_stats_callback,            pattern="^admin_stats$"))
+    app.add_handler(CallbackQueryHandler(admin_back_callback,             pattern="^admin_back$"))
     app.add_handler(CallbackQueryHandler(admin_pending_requests_callback, pattern="^admin_pending_requests$"))
     app.add_handler(CallbackQueryHandler(admin_prem30_callback,           pattern="^admin_prem30_"))
     app.add_handler(CallbackQueryHandler(admin_prem7_callback,            pattern="^admin_prem7_"))

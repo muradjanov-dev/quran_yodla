@@ -536,31 +536,53 @@ def delete_ayah_photo(surah_number: int, ayah_number: int):
 
 # ─── GLOBAL SETTINGS ──────────────────────────────────────────────────────────
 
-def get_notification_time() -> tuple:
-    """Returns (hour, minute) for daily notification. Default: (8, 0)."""
+def get_notification_settings() -> tuple:
+    """Returns (hour, minute, count). Default: (8, 0, 1)."""
     if not db:
-        return (8, 0)
+        return (8, 0, 1)
     try:
         doc = db.collection("settings").document("notifications").get()
         if doc.exists:
             data = doc.to_dict()
-            return (int(data.get("hour", 8)), int(data.get("minute", 0)))
+            return (
+                int(data.get("hour", 8)),
+                int(data.get("minute", 0)),
+                int(data.get("count", 1)),
+            )
     except Exception as e:
-        logger.error(f"get_notification_time error: {e}")
-    return (8, 0)
+        logger.error(f"get_notification_settings error: {e}")
+    return (8, 0, 1)
 
 
-def set_notification_time(hour: int, minute: int):
-    """Saves notification time to Firestore."""
+def get_notification_time() -> tuple:
+    """Backward-compat wrapper. Returns (hour, minute)."""
+    h, m, _ = get_notification_settings()
+    return (h, m)
+
+
+def set_notification_time(hour: int, minute: int, count: int = None):
+    """Saves notification time (and optionally count) to Firestore."""
     if not db:
         return
     try:
-        db.collection("settings").document("notifications").set({
-            "hour":   hour,
-            "minute": minute,
-        })
+        data = {"hour": hour, "minute": minute}
+        if count is not None:
+            data["count"] = count
+        db.collection("settings").document("notifications").set(data, merge=True)
     except Exception as e:
         logger.error(f"set_notification_time error: {e}")
+
+
+def set_notification_count(count: int):
+    """Saves notification daily count to Firestore."""
+    if not db:
+        return
+    try:
+        db.collection("settings").document("notifications").set(
+            {"count": count}, merge=True
+        )
+    except Exception as e:
+        logger.error(f"set_notification_count error: {e}")
 
 
 # ─── HELPERS ──────────────────────────────────────────────────────────────────

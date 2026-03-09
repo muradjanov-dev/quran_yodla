@@ -16,6 +16,7 @@ from config import (
     BOT_TOKEN, WEBHOOK_URL, PORT, ADMIN_ID, LOCAL_TZ
 )
 import firebase_config  # noqa: E402 — ensures Firebase is initialized at startup
+from services.firebase_service import get_notification_settings  # noqa
 
 # ─── Release Notes (sent to admin on every startup) ───────────────────────────
 RELEASE_NOTES = """
@@ -61,25 +62,32 @@ logger = logging.getLogger(__name__)
 def setup_scheduler(app: Application):
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
-    from services.firebase_service import get_notification_time
 
     TZ = pytz.timezone(LOCAL_TZ)
     scheduler = AsyncIOScheduler(timezone=TZ)
 
-    # Read saved notification time (default 08:00)
-    notif_hour, notif_minute = get_notification_time()
-    logger.info(f"Notification time: {notif_hour:02d}:{notif_minute:02d}")
+    # Read saved notification settings (time + count)
+    notif_hour, notif_minute, notif_count = get_notification_settings()
+    logger.info(f"Notification: {notif_hour:02d}:{notif_minute:02d} × {notif_count}/day")
 
-    # Daily notifications
+    # Daily notifications — support 1-5 per day evenly spaced
     async def _daily_notif():
         await send_daily_notifications(app.bot)
 
-    scheduler.add_job(
-        _daily_notif,
-        CronTrigger(hour=notif_hour, minute=notif_minute, timezone=TZ),
-        id="daily_notifications",
-        replace_existing=True,
-    )
+    # Store fn reference so admin count-change handler can re-use it
+    app.bot_data["_daily_notif_fn"] = _daily_notif
+
+    # Interval hours between jobs for each count option
+    intervals = {1: 0, 2: 8, 3: 6, 4: 4, 5: 3}
+    interval_h = intervals.get(notif_count, 0)
+    for i in range(notif_count):
+        job_hour = (notif_hour + i * interval_h) % 24
+        scheduler.add_job(
+            _daily_notif,
+            CronTrigger(hour=job_hour, minute=notif_minute, timezone=TZ),
+            id=f"daily_notifications_{i}",
+            replace_existing=True,
+        )
 
     # Hourly leaderboard update
     async def _update_leaderboard():

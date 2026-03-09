@@ -86,11 +86,13 @@ def ayah_header(surah_name: str, surah_number: int,
 
 def ayah_text_message(arabic: str, uzbek: str, instruction: str, count: int) -> str:
     return (
-        f"{arabic}\n\n"
-        f"📝 O'zbekcha: {uzbek}\n\n"
-        f"──────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"{arabic}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📝 {uzbek}\n\n"
+        f"──────────────────────\n"
         f"{instruction}\n"
-        f"──────────────────"
+        f"──────────────────────"
     )
 
 
@@ -283,6 +285,7 @@ def premium_menu_message(is_active: bool, expiry: Optional[str]) -> str:
         f"TO'LOV:\n"
         f"💳 5614 6830 0539 3277\n"
         f"👤 M.Nodirjon\n\n"
+        f"🎁 Har bir premium imkoniyati bo'lmagan bo'lajak qorilar uchun Bepul Quron yodlash funksiya va imkoniyatlari ko'payishiga va loyihani rivojlanishiga yordam beradi"
         f"To'lov qilgach, chekni yuboring 👇"
     )
 
@@ -290,7 +293,7 @@ def premium_menu_message(is_active: bool, expiry: Optional[str]) -> str:
 def premium_trial_offer() -> str:
     return (
         "🎁 SIZ UCHUN MAXSUS TAKLIF!\n\n"
-        "3 kunlik BEPUL Premium sinab ko'ring!\n"
+        "1 kunlik BEPUL Premium sinab ko'ring!\n"
         "Barcha imkoniyatlar ochiq!"
     )
 

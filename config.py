@@ -16,7 +16,7 @@ PORT: int = int(os.getenv("PORT", "8443"))
 
 # ─── Bot Logic Constants ───────────────────────────────────────────────────────
 DAILY_FREE_LIMIT: int = 5          # free users: max new ayahs per day
-TRIAL_DAYS: int = 3               # free trial duration
+TRIAL_DAYS: int = 1               # free trial duration
 REFERRAL_BONUS: int = 15          # Himmat points per referral
 ONBOARDING_BONUS: int = 50        # bonus for completing onboarding
 FIRST_AYAH_BONUS: int = 25        # bonus for first ayah memorized
@@ -115,8 +115,9 @@ ADMIN_AYAH_PHOTO_SURAH  = 50
 ADMIN_AYAH_PHOTO_AYAH   = 51
 ADMIN_AYAH_PHOTO_UPLOAD = 52
 
-# Admin notification time
-ADMIN_NOTIF_TIME = 53
+# Admin notification time / count
+ADMIN_NOTIF_TIME  = 53
+ADMIN_NOTIF_COUNT = 54
 
 # Contact Admin
 CONTACT_AWAIT_MSG = 60

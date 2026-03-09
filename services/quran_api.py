@@ -5,12 +5,21 @@ Provides ayah text (Arabic + Uzbek) and audio URL resolution.
 
 import asyncio
 import logging
+import re
 from typing import Optional
 import requests
 
 from config import ALQURAN_API_BASE, AUDIO_CDN_BASE, RECITERS
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_tafsir(text: str) -> str:
+    """Remove parenthetical commentary/tafsir from Uzbek translation text."""
+    text = re.sub(r'\s*\([^)]*\)', '', text)
+    text = re.sub(r'\s*\[[^\]]*\]', '', text)
+    return text.strip()
+
 
 # Simple in-memory cache: key -> (data, timestamp)
 _cache: dict = {}
@@ -69,9 +78,10 @@ def get_ayah(surah: int, ayah: int) -> Optional[dict]:
     if not arabic_data:
         return None
 
+    raw_uzbek = uzbek_data["data"]["text"] if uzbek_data else "(tarjima yo'q)"
     result = {
         "arabic":        arabic_data["data"]["text"] if arabic_data else "",
-        "uzbek":         uzbek_data["data"]["text"]   if uzbek_data  else "(tarjima yo'q)",
+        "uzbek":         _strip_tafsir(raw_uzbek),
         "global_number": arabic_data["data"]["number"] if arabic_data else 0,
         "surah_number":  surah,
         "ayah_number":   ayah,
@@ -121,7 +131,7 @@ def get_surah_ayahs(surah: int) -> Optional[list]:
     for a in arabic_ayahs:
         result.append({
             "arabic":        a["text"],
-            "uzbek":         uzbek_map.get(a["numberInSurah"], "(tarjima yo'q)"),
+            "uzbek":         _strip_tafsir(uzbek_map.get(a["numberInSurah"], "(tarjima yo'q)")),
             "global_number": a["number"],
             "surah_number":  surah,
             "ayah_number":   a["numberInSurah"],

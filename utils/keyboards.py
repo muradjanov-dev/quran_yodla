@@ -250,18 +250,28 @@ def referral_share_keyboard(ref_link: str) -> InlineKeyboardMarkup:
 
 # ─── Admin ────────────────────────────────────────────────────────────────────
 
-def admin_main_keyboard(pending_count: int = 0, notif_time: str = "08:00") -> InlineKeyboardMarkup:
+def admin_main_keyboard(pending_count: int = 0, notif_time: str = "08:00",
+                        notif_count: int = 1) -> InlineKeyboardMarkup:
     premium_label = f"📋 Premium so'rovlar ({pending_count} ta kutilmoqda)" if pending_count else "📋 Premium so'rovlar"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("👥 Barcha foydalanuvchilar",      callback_data="admin_users_0")],
-        [InlineKeyboardButton("👤 User boshqarish",              callback_data="admin_user_mgmt")],
-        [InlineKeyboardButton("💎 Premium berish",               callback_data="admin_give_premium")],
-        [InlineKeyboardButton("📢 Xabar yuborish",               callback_data="admin_broadcast")],
-        [InlineKeyboardButton(premium_label,                     callback_data="admin_pending_requests")],
-        [InlineKeyboardButton("🖼 Oyatga rasm qo'shish",         callback_data="admin_ayah_photo")],
-        [InlineKeyboardButton(f"⏰ Bildirishnoma: {notif_time}", callback_data="admin_notif_time")],
-        [InlineKeyboardButton("📊 Batafsil statistika",          callback_data="admin_stats")],
+        [InlineKeyboardButton("👥 Barcha foydalanuvchilar",              callback_data="admin_users_0")],
+        [InlineKeyboardButton("👤 User boshqarish",                      callback_data="admin_user_mgmt")],
+        [InlineKeyboardButton("💎 Premium berish",                       callback_data="admin_give_premium")],
+        [InlineKeyboardButton("📢 Xabar yuborish",                       callback_data="admin_broadcast")],
+        [InlineKeyboardButton(premium_label,                             callback_data="admin_pending_requests")],
+        [InlineKeyboardButton("🖼 Oyatga rasm qo'shish",                 callback_data="admin_ayah_photo")],
+        [InlineKeyboardButton(f"⏰ Bildirishnoma: {notif_time}",         callback_data="admin_notif_time")],
+        [InlineKeyboardButton(f"🔔 Kunlik soni: {notif_count}x",         callback_data="admin_notif_count")],
+        [InlineKeyboardButton("📊 Batafsil statistika",                  callback_data="admin_stats")],
     ])
+
+
+def admin_notif_count_keyboard(active: int = 1) -> InlineKeyboardMarkup:
+    row = []
+    for i in range(1, 6):
+        label = f"[{i}x]" if i == active else f"{i}x"
+        row.append(InlineKeyboardButton(label, callback_data=f"admin_notif_count_{i}"))
+    return InlineKeyboardMarkup([row])
 
 
 def admin_user_actions_keyboard(target_id: int) -> InlineKeyboardMarkup:

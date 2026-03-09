@@ -465,20 +465,28 @@ async def admin_notif_time_set(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text("❌ Soat 0-23, daqiqa 0-59 bo'lishi kerak:")
         return ADMIN_NOTIF_TIME
 
+    _, _, count = get_notification_settings()
     set_notification_time(hour, minute)
 
-    # Reschedule the APScheduler job
+    # Reschedule all notification jobs with new base time
     try:
         import pytz
         from apscheduler.triggers.cron import CronTrigger
         scheduler = context.application.bot_data.get("scheduler")
         if scheduler:
             TZ = pytz.timezone("Asia/Tashkent")
-            scheduler.reschedule_job(
-                "daily_notifications",
-                CronTrigger(hour=hour, minute=minute, timezone=TZ),
-            )
-            logger.info(f"Notification time rescheduled to {hour:02d}:{minute:02d}")
+            intervals = {1: 0, 2: 8, 3: 6, 4: 4, 5: 3}
+            interval_h = intervals.get(count, 0)
+            for i in range(count):
+                job_hour = (hour + i * interval_h) % 24
+                try:
+                    scheduler.reschedule_job(
+                        f"daily_notifications_{i}",
+                        CronTrigger(hour=job_hour, minute=minute, timezone=TZ),
+                    )
+                except Exception:
+                    pass  # job may not exist if count changed
+            logger.info(f"Notification time rescheduled to {hour:02d}:{minute:02d} × {count}")
     except Exception as e:
         logger.error(f"Reschedule error: {e}")
 

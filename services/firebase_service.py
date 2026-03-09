@@ -297,6 +297,18 @@ def add_activity_to_period_safe(user_id: int, verses: int, repetitions: int,
         except Exception as e:
             logger.error(f"stats increment error {coll}: {e}")
 
+    # Also update user document totals (needed for leaderboard + profile global stats)
+    try:
+        db.collection("users").document(str(user_id)).update({
+            "stats.total_verses_read": Inc(verses),
+            "stats.total_repetitions": Inc(repetitions),
+            "stats.total_minutes":     Inc(minutes),
+            "stats.himmat_points":     Inc(himmat),
+            "stats.last_activity_date": _now(),
+        })
+    except Exception as e:
+        logger.error(f"add_activity user totals error: {e}")
+
 
 def get_daily_stats(user_id: int, date_str: Optional[str] = None) -> dict:
     if not db:

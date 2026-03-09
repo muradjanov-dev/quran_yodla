@@ -60,17 +60,22 @@ logger = logging.getLogger(__name__)
 def setup_scheduler(app: Application):
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
+    from services.firebase_service import get_notification_time
 
     TZ = pytz.timezone(LOCAL_TZ)
     scheduler = AsyncIOScheduler(timezone=TZ)
 
-    # Daily notifications at 08:00 Asia/Tashkent
+    # Read saved notification time (default 08:00)
+    notif_hour, notif_minute = get_notification_time()
+    logger.info(f"Notification time: {notif_hour:02d}:{notif_minute:02d}")
+
+    # Daily notifications
     async def _daily_notif():
         await send_daily_notifications(app.bot)
 
     scheduler.add_job(
         _daily_notif,
-        CronTrigger(hour=8, minute=0, timezone=TZ),
+        CronTrigger(hour=notif_hour, minute=notif_minute, timezone=TZ),
         id="daily_notifications",
         replace_existing=True,
     )
@@ -110,6 +115,7 @@ def setup_scheduler(app: Application):
     )
 
     scheduler.start()
+    app.bot_data["scheduler"] = scheduler  # accessible from admin handler
     logger.info("APScheduler started")
     return scheduler
 

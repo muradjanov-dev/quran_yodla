@@ -58,7 +58,7 @@ QURANICAUDIO_BASE = "https://download.quranicaudio.com/quran"
 
 # ─── Reciter Identifiers ───────────────────────────────────────────────────────
 RECITERS = {
-    "husary":    {"name": "🎵 Husary (Muallim)",      "api_id": "ar.husary",                  "folder": "husary"},
+    "husary":    {"name": "🎵 Husary (Muallim)",      "api_id": "ar.husarymujawwad",          "folder": "husary_muallim"},
     "afasy":     {"name": "🎵 Al-Afasy",               "api_id": "ar.alafasy",                 "folder": "mishaari_raashid_al_3afaasee"},
     "ghamdi":    {"name": "🎵 Al-Ghamdi",              "api_id": "ar.alghamdi",                "folder": "sa3d_al-ghaamidi"},
     "sudais":    {"name": "🎵 As-Sudais",              "api_id": "ar.abdurrahmaansudais",      "folder": "abdurrahmaan_as-sudays"},
@@ -114,3 +114,6 @@ LISTEN_SELECT_SURAH  = 40
 ADMIN_AYAH_PHOTO_SURAH  = 50
 ADMIN_AYAH_PHOTO_AYAH   = 51
 ADMIN_AYAH_PHOTO_UPLOAD = 52
+
+# Admin notification time
+ADMIN_NOTIF_TIME = 53

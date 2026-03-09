@@ -249,6 +249,7 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
 
     # Ayah photo (if admin has added one)
     photo_file_id = get_ayah_photo(surah_num, next_index)
+    logger.info(f"Ayah photo lookup: surah={surah_num}, ayah={next_index}, found={bool(photo_file_id)}")
     if photo_file_id:
         try:
             m = await bot.send_photo(chat_id, photo=photo_file_id,
@@ -285,6 +286,7 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
     session["stage"]              = "rep_3"
     session["current_ayah_data"]  = ayah_record
     context.user_data["session"]  = session
+    context.user_data["_cur_ayah"] = ayah_record  # fast fallback for rep_3/rep_7
 
     return MEMO_REP_3
 
@@ -306,13 +308,19 @@ async def _cleanup_step(context: ContextTypes.DEFAULT_TYPE, query):
 async def rep_3_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    # Double-tap guard: remove buttons atomically; bail if already removed
+    try:
+        await query.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        return
+
+    user_id = query.from_user.id
+    chat_id = query.message.chat_id
     try:
         await query.message.delete()
     except Exception:
         pass
 
-    user_id = query.from_user.id
-    chat_id = query.message.chat_id
     session = await _recover_session(context, query.from_user.id)
     if not session.get("session_id"):
         await context.bot.send_message(chat_id, "Sessiya topilmadi. Qaytadan boshlang.")
@@ -322,7 +330,7 @@ async def rep_3_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if level_up:
         await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
-    ayah_data = session.get("current_ayah_data", {})
+    ayah_data = context.user_data.get("_cur_ayah") or session.get("current_ayah_data", {})
     await context.bot.send_message(
         chat_id,
         ayah_text_message(
@@ -340,13 +348,19 @@ async def rep_3_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def rep_7_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    # Double-tap guard
+    try:
+        await query.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        return
+
+    user_id = query.from_user.id
+    chat_id = query.message.chat_id
     try:
         await query.message.delete()
     except Exception:
         pass
 
-    user_id = query.from_user.id
-    chat_id = query.message.chat_id
     session = await _recover_session(context, query.from_user.id)
     if not session.get("session_id"):
         await context.bot.send_message(chat_id, "Sessiya topilmadi. Qaytadan boshlang.")
@@ -356,7 +370,7 @@ async def rep_7_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if level_up:
         await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
-    ayah_data = session.get("current_ayah_data", {})
+    ayah_data = context.user_data.get("_cur_ayah") or session.get("current_ayah_data", {})
     await context.bot.send_message(
         chat_id,
         ayah_text_message(
@@ -374,6 +388,12 @@ async def rep_7_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query   = update.callback_query
     await query.answer()
+    # Double-tap guard
+    try:
+        await query.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        return
+
     user_id = query.from_user.id
     chat_id = query.message.chat_id
     session = await _recover_session(context, query.from_user.id)
@@ -463,6 +483,12 @@ async def _send_accumulation(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
 async def accumulation_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query   = update.callback_query
     await query.answer()
+    # Double-tap guard
+    try:
+        await query.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        return
+
     user_id = query.from_user.id
     chat_id = query.message.chat_id
     session = await _recover_session(context, query.from_user.id)

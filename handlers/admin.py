@@ -12,10 +12,12 @@ from telegram.ext import (
 from config import (
     ADMIN_ID, ADMIN_BROADCAST, ADMIN_USER_SEARCH,
     ADMIN_AYAH_PHOTO_SURAH, ADMIN_AYAH_PHOTO_AYAH, ADMIN_AYAH_PHOTO_UPLOAD,
+    ADMIN_NOTIF_TIME,
 )
 from services.firebase_service import (
     get_user, get_pending_premium_requests, get_all_users,
     set_ayah_photo, delete_ayah_photo,
+    get_notification_time, set_notification_time,
 )
 from services.stats_service import get_bot_wide_stats
 from services.premium_service import activate_premium, deactivate_premium
@@ -31,9 +33,10 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     stats   = get_bot_wide_stats()
     pending = stats.get("pending_premium", 0)
+    hour, minute = get_notification_time()
     await update.message.reply_text(
         admin_menu_message(stats),
-        reply_markup=admin_main_keyboard(pending_count=pending)
+        reply_markup=admin_main_keyboard(pending_count=pending, notif_time=f"{hour:02d}:{minute:02d}")
     )
 
 
@@ -44,7 +47,11 @@ async def admin_stats_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     await query.answer()
     stats = get_bot_wide_stats()
-    await query.message.reply_text(admin_menu_message(stats), reply_markup=admin_main_keyboard(stats.get("pending_premium",0)))
+    hour, minute = get_notification_time()
+    await query.message.reply_text(
+        admin_menu_message(stats),
+        reply_markup=admin_main_keyboard(stats.get("pending_premium", 0), notif_time=f"{hour:02d}:{minute:02d}")
+    )
 
 
 async def admin_user_mgmt_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -122,42 +129,49 @@ async def admin_rem_prem_callback(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def admin_broadcast_init(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sets broadcast mode flag — handled by group=-1 interceptor."""
     query = update.callback_query
     if query.from_user.id != ADMIN_ID:
         await query.answer(); return
     await query.answer()
-    await query.message.reply_text("📢 Barcha foydalanuvchilarga xabar:\n(Matn, rasm yoki video yuborishingiz mumkin)")
-    return ADMIN_BROADCAST
+    context.user_data["_bcast"] = True
+    await query.message.reply_text(
+        "📢 Barcha foydalanuvchilarga xabar:\n"
+        "(Matn, rasm, video yoki har qanday format yuborishingiz mumkin)\n\n"
+        "Xabarni yuboring 👇"
+    )
 
 
 async def admin_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    users   = get_all_users()
-    success = 0
-    failed  = 0
+    """Sends the broadcast. Called by the group=-1 interceptor."""
+    users     = get_all_users()
+    success   = 0
+    failed    = 0
     from_chat = update.effective_chat.id
     msg_id    = update.message.message_id
+    logger.info(f"Broadcast started: {len(users)} users, from_chat={from_chat}, msg_id={msg_id}")
     progress_msg = await update.message.reply_text(f"⏳ Xabar yuborilmoqda... {len(users)} ta user")
 
+    import asyncio
     for user in users:
         uid = user.get("telegram_id")
         if not uid:
             continue
         try:
             await context.bot.copy_message(
-                chat_id     = uid,
-                from_chat_id= from_chat,
-                message_id  = msg_id,
+                chat_id      = uid,
+                from_chat_id = from_chat,
+                message_id   = msg_id,
             )
             success += 1
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Broadcast failed for {uid}: {e}")
             failed += 1
+        await asyncio.sleep(0.05)
 
     await progress_msg.edit_text(
         f"✅ Muvaffaqiyatli: {success}\n❌ Xato (bloklagan): {failed}"
     )
-    return ConversationHandler.END
 
 
 async def admin_pending_requests_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -251,21 +265,70 @@ async def admin_ayah_photo_delete(update: Update, context: ContextTypes.DEFAULT_
     await update.message.reply_text(f"✅ Sura {parts[0]}, {parts[1]}-oyat rasmi o'chirildi.")
 
 
+async def admin_notif_time_init(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    hour, minute = get_notification_time()
+    await query.message.reply_text(
+        f"⏰ BILDIRISHNOMA VAQTI\n\n"
+        f"Hozirgi vaqt: {hour:02d}:{minute:02d} (Toshkent)\n\n"
+        f"Yangi vaqtni HH:MM formatida yuboring:\n"
+        f"(masalan: 07:30, 09:00, 20:00)"
+    )
+    return ADMIN_NOTIF_TIME
+
+
+async def admin_notif_time_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    text = update.message.text.strip()
+    parts = text.split(":")
+    if len(parts) != 2 or not all(p.isdigit() for p in parts):
+        await update.message.reply_text("❌ Format noto'g'ri. HH:MM kiriting (masalan: 08:00):")
+        return ADMIN_NOTIF_TIME
+    hour, minute = int(parts[0]), int(parts[1])
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        await update.message.reply_text("❌ Soat 0-23, daqiqa 0-59 bo'lishi kerak:")
+        return ADMIN_NOTIF_TIME
+
+    set_notification_time(hour, minute)
+
+    # Reschedule the APScheduler job
+    try:
+        import pytz
+        from apscheduler.triggers.cron import CronTrigger
+        scheduler = context.application.bot_data.get("scheduler")
+        if scheduler:
+            TZ = pytz.timezone("Asia/Tashkent")
+            scheduler.reschedule_job(
+                "daily_notifications",
+                CronTrigger(hour=hour, minute=minute, timezone=TZ),
+            )
+            logger.info(f"Notification time rescheduled to {hour:02d}:{minute:02d}")
+    except Exception as e:
+        logger.error(f"Reschedule error: {e}")
+
+    await update.message.reply_text(
+        f"✅ Bildirishnoma vaqti o'zgartirildi!\n"
+        f"Endi har kuni soat {hour:02d}:{minute:02d} da xabar yuboriladi (Toshkent vaqti)."
+    )
+    return ConversationHandler.END
+
+
 def build_admin_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("admin", cmd_admin),
             # Callback buttons from admin menu enter the conversation
             CallbackQueryHandler(admin_user_mgmt_callback, pattern="^admin_user_mgmt$"),
-            CallbackQueryHandler(admin_broadcast_init,     pattern="^admin_broadcast$"),
             CallbackQueryHandler(admin_ayah_photo_init,    pattern="^admin_ayah_photo$"),
+            CallbackQueryHandler(admin_notif_time_init,    pattern="^admin_notif_time$"),
         ],
         states={
             ADMIN_USER_SEARCH: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_user_search),
-            ],
-            ADMIN_BROADCAST: [
-                MessageHandler(filters.ALL & ~filters.COMMAND, admin_broadcast_send),
             ],
             ADMIN_AYAH_PHOTO_SURAH: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ayah_photo_surah),
@@ -277,6 +340,9 @@ def build_admin_handler() -> ConversationHandler:
                 MessageHandler(filters.PHOTO, admin_ayah_photo_upload),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ayah_photo_upload),
             ],
+            ADMIN_NOTIF_TIME: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_notif_time_set),
+            ],
         },
         fallbacks=[CommandHandler("start", lambda u, c: ConversationHandler.END)],
         allow_reentry=True,
@@ -285,10 +351,29 @@ def build_admin_handler() -> ConversationHandler:
     )
 
 
+async def _admin_broadcast_interceptor(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """group=-1 interceptor: handles admin broadcast before ConversationHandlers."""
+    from telegram.ext import ApplicationHandlerStop
+    if update.effective_user is None or update.effective_user.id != ADMIN_ID:
+        return
+    if not context.user_data.get("_bcast"):
+        return
+    if not update.message:
+        return
+    context.user_data.pop("_bcast", None)
+    await admin_broadcast_send(update, context)
+    raise ApplicationHandlerStop
+
+
 def register_admin_callbacks(app):
-    # Note: admin_user_mgmt, admin_broadcast, admin_ayah_photo are in ConversationHandler entry_points
-    app.add_handler(CallbackQueryHandler(admin_stats_callback,           pattern="^admin_stats$"))
+    # Broadcast: direct callback sets flag, group=-1 message handler executes
+    app.add_handler(CallbackQueryHandler(admin_broadcast_init, pattern="^admin_broadcast$"))
+    app.add_handler(
+        MessageHandler(filters.ALL & ~filters.COMMAND, _admin_broadcast_interceptor),
+        group=-1,
+    )
+    app.add_handler(CallbackQueryHandler(admin_stats_callback,            pattern="^admin_stats$"))
     app.add_handler(CallbackQueryHandler(admin_pending_requests_callback, pattern="^admin_pending_requests$"))
-    app.add_handler(CallbackQueryHandler(admin_prem30_callback,          pattern="^admin_prem30_"))
-    app.add_handler(CallbackQueryHandler(admin_prem7_callback,           pattern="^admin_prem7_"))
-    app.add_handler(CallbackQueryHandler(admin_rem_prem_callback,        pattern="^admin_rem_prem_"))
+    app.add_handler(CallbackQueryHandler(admin_prem30_callback,           pattern="^admin_prem30_"))
+    app.add_handler(CallbackQueryHandler(admin_prem7_callback,            pattern="^admin_prem7_"))
+    app.add_handler(CallbackQueryHandler(admin_rem_prem_callback,         pattern="^admin_rem_prem_"))

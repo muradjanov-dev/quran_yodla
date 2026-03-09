@@ -17,7 +17,7 @@ from config import (
 )
 from services.firebase_service import (
     get_user, get_active_session, create_session, update_session, close_session,
-    get_daily_ayah_count, add_activity_to_period_safe
+    get_daily_ayah_count, add_activity_to_period_safe, get_ayah_photo,
 )
 from services.quran_api import get_ayah, get_audio_url, get_surah_ayahs
 from services.gamification import (
@@ -70,7 +70,7 @@ async def juz_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session = get_active_session(user_id)
         if session:
             context.user_data["session"] = session
-            return await _send_current_ayah(query.message, context, user_id)
+            return await _send_current_ayah(query.message.chat_id, context, user_id)
         else:
             await query.message.reply_text("Aktiv sessiya topilmadi. Yangi boshlaylik.")
             await query.message.reply_text(
@@ -90,9 +90,11 @@ async def juz_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return MEMO_SELECT_DIRECTION
     else:
         context.user_data["direction"] = "forward"
+        db_user = get_user(query.from_user.id)
+        premium = is_premium(db_user)
         await query.message.reply_text(
             "🎙️ Qori tanlang:",
-            reply_markup=reciter_keyboard(for_memorize=True)
+            reply_markup=reciter_keyboard(for_memorize=True, is_premium=premium)
         )
         return MEMO_SELECT_RECITER
 
@@ -102,13 +104,27 @@ async def direction_selected(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     direction = "forward" if query.data == "dir_forward" else "backward"
     context.user_data["direction"] = direction
-    await query.message.reply_text("🎙️ Qori tanlang:", reply_markup=reciter_keyboard(for_memorize=True))
+    db_user = get_user(query.from_user.id)
+    premium = is_premium(db_user)
+    await query.message.reply_text("🎙️ Qori tanlang:", reply_markup=reciter_keyboard(for_memorize=True, is_premium=premium))
     return MEMO_SELECT_RECITER
 
 
 async def reciter_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
+    if query.data == "reciter_locked":
+        db_user = get_user(query.from_user.id)
+        premium = is_premium(db_user)
+        await query.message.reply_text(
+            "💎 Bu qori faqat Premium foydalanuvchilar uchun.\n\n"
+            "Husary (Muallim) bepul foydalanish mumkin.\n"
+            "Premium olish uchun: /start → 💎 Premium"
+        )
+        await query.message.reply_text("🎙️ Qori tanlang:", reply_markup=reciter_keyboard(for_memorize=True, is_premium=premium))
+        return MEMO_SELECT_RECITER
+
     reciter_key = query.data.split("_", 1)[1]  # "reciter_husary" → "husary"
     context.user_data["reciter"] = reciter_key
 
@@ -172,85 +188,123 @@ async def surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     context.user_data["session"] = session
 
-    return await _send_current_ayah(query.message, context, user_id)
+    chat_id = query.message.chat_id
+    return await _send_current_ayah(chat_id, context, user_id)
 
 
 # ─── Core Memorize Flow ───────────────────────────────────────────────────────
 
-async def _send_current_ayah(message, context: ContextTypes.DEFAULT_TYPE, user_id: int):
-    """Send the current ayah (header + audio + text + rep button)."""
-    session     = context.user_data.get("session", {})
+async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """Send the current ayah: header + audio + [photo] + text+button.
+    Tracks sent message IDs in context.user_data['step_msgs'] for later cleanup.
+    """
+    bot     = context.bot
+    session = context.user_data.get("session", {})
     surah_num   = session["surah_number"]
     surah_name  = session["surah_name"]
     reciter     = session["reciter"]
     acc_ayahs   = session.get("accumulated_ayahs", [])
-    next_index  = len(acc_ayahs) + 1  # next ayah to memorize
+    next_index  = len(acc_ayahs) + 1
 
-    # Fetch ayah data
     ayah_data = get_ayah(surah_num, next_index)
     if not ayah_data:
-        await message.reply_text("API xatoligi. Iltimos, qayta urinib ko'ring.")
+        await bot.send_message(chat_id, "API xatoligi. Iltimos, qayta urinib ko'ring.")
         return ConversationHandler.END
 
     surah_info  = get_surah_by_number(surah_num)
     total_ayahs = surah_info["ayah_count"] if surah_info else 999
 
+    step_msgs = []  # message IDs to delete after ayah is completed
+
     # Header
-    await message.reply_text(
-        ayah_header(surah_name, surah_num, next_index, total_ayahs)
-    )
+    m = await bot.send_message(chat_id, ayah_header(surah_name, surah_num, next_index, total_ayahs))
+    step_msgs.append(m.message_id)
 
     # Audio
     audio_url = get_audio_url(ayah_data["global_number"], reciter)
     try:
-        await message.reply_audio(audio=audio_url)
+        m = await bot.send_audio(chat_id, audio=audio_url)
+        step_msgs.append(m.message_id)
     except Exception as e:
         logger.warning(f"Audio send failed: {e}")
-        await message.reply_text(f"🎧 Audio: {audio_url}")
+        m = await bot.send_message(chat_id, f"🎧 Audio: {audio_url}")
+        step_msgs.append(m.message_id)
 
-    # Text + first rep button (3x)
-    await message.reply_text(
-        ayah_text_message(
-            ayah_data["arabic"], ayah_data["uzbek"],
-            rep_instruction(3), 3
-        ),
+    # Ayah photo (if admin has added one)
+    photo_file_id = get_ayah_photo(surah_num, next_index)
+    if photo_file_id:
+        try:
+            m = await bot.send_photo(chat_id, photo=photo_file_id,
+                                     caption=f"📖 {surah_name} — {next_index}-oyat")
+            step_msgs.append(m.message_id)
+        except Exception as e:
+            logger.warning(f"Ayah photo send failed: {e}")
+
+    # Text + 3x button
+    await bot.send_message(
+        chat_id,
+        ayah_text_message(ayah_data["arabic"], ayah_data["uzbek"], rep_instruction(3), 3),
         reply_markup=repetition_keyboard(3, "3")
     )
 
-    # Save current ayah data to session
+    # Track IDs for cleanup (everything EXCEPT the button message itself)
+    context.user_data["step_msgs"] = step_msgs
+    context.user_data["chat_id"]   = chat_id
+
+    # Save ayah data to session
+    ayah_record = {
+        "arabic":        ayah_data["arabic"],
+        "uzbek":         ayah_data["uzbek"],
+        "global_number": ayah_data["global_number"],
+        "surah_number":  surah_num,
+        "ayah_number":   next_index,
+    }
     update_session(session["session_id"], {
         "current_ayah_index": next_index,
         "stage":              "rep_3",
-        "current_ayah_data":  {
-            "arabic":        ayah_data["arabic"],
-            "uzbek":         ayah_data["uzbek"],
-            "global_number": ayah_data["global_number"],
-            "surah_number":  surah_num,
-            "ayah_number":   next_index,
-        }
+        "current_ayah_data":  ayah_record,
     })
     session["current_ayah_index"] = next_index
-    session["stage"] = "rep_3"
-    context.user_data["session"] = session
+    session["stage"]              = "rep_3"
+    session["current_ayah_data"]  = ayah_record
+    context.user_data["session"]  = session
 
     return MEMO_REP_3
 
 
+async def _cleanup_step(context: ContextTypes.DEFAULT_TYPE, query):
+    """Delete the button message and any tracked step messages."""
+    chat_id = query.message.chat_id
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+    for mid in context.user_data.pop("step_msgs", []):
+        try:
+            await context.bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
+
+
 async def rep_3_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query   = update.callback_query
+    query = update.callback_query
     await query.answer()
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
     user_id = query.from_user.id
+    chat_id = query.message.chat_id
     session = context.user_data.get("session", {})
 
-    # Award points
     level_up = award_points(user_id, points_for_repetition(3), "rep_3")
     if level_up:
-        await query.message.reply_text(level_up_message(level_up[1]))
+        await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
-    # Get current ayah data
     ayah_data = session.get("current_ayah_data", {})
-
-    await query.message.reply_text(
+    await context.bot.send_message(
+        chat_id,
         ayah_text_message(
             ayah_data.get("arabic", ""), ayah_data.get("uzbek", ""),
             rep_instruction(7), 7
@@ -264,17 +318,24 @@ async def rep_3_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def rep_7_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query   = update.callback_query
+    query = update.callback_query
     await query.answer()
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+
     user_id = query.from_user.id
+    chat_id = query.message.chat_id
     session = context.user_data.get("session", {})
 
     level_up = award_points(user_id, points_for_repetition(7), "rep_7")
     if level_up:
-        await query.message.reply_text(level_up_message(level_up[1]))
+        await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
     ayah_data = session.get("current_ayah_data", {})
-    await query.message.reply_text(
+    await context.bot.send_message(
+        chat_id,
         ayah_text_message(
             ayah_data.get("arabic", ""), ayah_data.get("uzbek", ""),
             rep_instruction(11), 11
@@ -291,121 +352,135 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query   = update.callback_query
     await query.answer()
     user_id = query.from_user.id
+    chat_id = query.message.chat_id
     session = context.user_data.get("session", {})
 
-    # First ayah bonus (before incrementing stats)
+    # Delete button message + header/audio/photo
+    await _cleanup_step(context, query)
+
+    # Bonuses and points
     first_ayah_bonus = check_and_award_first_ayah(user_id)
-
-    # Daily login bonus (first activity today)
     check_and_award_daily_login(user_id)
-
-    # Award 11-rep points + full ayah completion
     level_up = award_points(user_id, points_for_repetition(11) + points_for_ayah_complete(), "rep_11+ayah")
     if level_up:
-        await query.message.reply_text(level_up_message(level_up[1]))
+        await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
-    # Record stats (1 new ayah)
-    add_activity_to_period_safe(user_id, 1, 3+7+11, 5, points_for_repetition(11), [session.get("surah_name","")])
+    add_activity_to_period_safe(user_id, 1, 3+7+11, 5, points_for_repetition(11), [session.get("surah_name", "")])
 
-    # Update streak and award milestone bonus if hit
     new_streak, streak_broken, streak_bonus = apply_streak_update(user_id)
     if streak_bonus:
-        await query.message.reply_text(
-            f"🔥 {new_streak}-kunlik streak! +{streak_bonus} Himmat ball!"
-        )
+        await context.bot.send_message(chat_id, f"🔥 {new_streak}-kunlik streak! +{streak_bonus} Himmat ball!")
     elif new_streak > 1 and not streak_broken:
-        await query.message.reply_text(f"🔥 Streak: {new_streak} kun davomida!")
-
+        await context.bot.send_message(chat_id, f"🔥 Streak: {new_streak} kun davomida!")
     if first_ayah_bonus:
-        await query.message.reply_text(
-            f"🌟 BIRINCHI OYAT! +{25} Himmat ball! Tabriklaymiz!"
-        )
+        await context.bot.send_message(chat_id, f"🌟 BIRINCHI OYAT! +25 Himmat ball! Tabriklaymiz!")
 
-    # Add to accumulated ayahs
+    # Add to accumulated ayahs list
     current_ayah = session.get("current_ayah_data", {})
     acc = session.get("accumulated_ayahs", [])
     acc.append(current_ayah)
     update_session(session["session_id"], {
-        "accumulated_ayahs": acc,
-        "stage": "accumulation",
+        "accumulated_ayahs":   acc,
+        "stage":               "accumulation",
         "session_ayahs_count": len(acc),
     })
     session["accumulated_ayahs"] = acc
 
-    # Check if free user hit limit
+    # Free user daily limit check
     db_user = get_user(user_id)
     if not is_premium(db_user):
         daily_count = get_daily_ayah_count(user_id)
         if daily_count >= DAILY_FREE_LIMIT:
-            await query.message.reply_text(
-                limit_reached_message(),
-                reply_markup=limit_reached_keyboard()
-            )
+            await context.bot.send_message(chat_id, limit_reached_message(),
+                                            reply_markup=limit_reached_keyboard())
             close_session(session["session_id"])
             return ConversationHandler.END
 
-    # Send accumulation round
-    return await _send_accumulation(query.message, context, user_id, acc)
+    # Ayah 1: skip accumulation, go directly to ayah 2
+    # Ayah 2+: send all accumulated ayahs together for 5x joint repetition
+    if len(acc) == 1:
+        await context.bot.send_message(chat_id, "✅ 1-oyat yodlandi! Endi 2-oyatni o'rganamiz 👇")
+        return await _send_current_ayah(chat_id, context, user_id)
+
+    return await _send_accumulation(chat_id, context, user_id, acc)
 
 
-async def _send_accumulation(message, context, user_id: int, acc: list):
-    """Send all accumulated ayahs for combined 7x repetition."""
+async def _send_accumulation(chat_id: int, context: ContextTypes.DEFAULT_TYPE, user_id: int, acc: list):
+    """Send all accumulated ayahs together for 5x joint repetition."""
+    bot     = context.bot
     session = context.user_data.get("session", {})
     reciter = session.get("reciter", "husary")
 
-    # Send each accumulated audio
+    acc_msgs = []
     for ayah in acc:
         audio_url = get_audio_url(ayah.get("global_number", 1), reciter)
         try:
-            await message.reply_audio(audio=audio_url)
+            m = await bot.send_audio(chat_id, audio=audio_url)
+            acc_msgs.append(m.message_id)
         except Exception as e:
             logger.warning(f"Accumulation audio error: {e}")
 
-    await message.reply_text(
+    await bot.send_message(
+        chat_id,
         accumulation_message(acc),
         reply_markup=accumulation_keyboard(len(acc))
     )
-    update_session(session["session_id"], {"stage": "acc_7"})
-    session["stage"] = "acc_7"
+
+    context.user_data["acc_msgs"] = acc_msgs
+    update_session(session["session_id"], {"stage": "acc_5"})
+    session["stage"] = "acc_5"
     context.user_data["session"] = session
-    return MEMO_ACC_7
+    return MEMO_ACC_7  # reuse same state constant
 
 
 async def accumulation_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query   = update.callback_query
     await query.answer()
     user_id = query.from_user.id
+    chat_id = query.message.chat_id
     session = context.user_data.get("session", {})
+
+    # Delete the accumulation button message and acc audio messages
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+    for mid in context.user_data.pop("acc_msgs", []):
+        try:
+            await context.bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
 
     acc = session.get("accumulated_ayahs", [])
     level_up = award_points(user_id, points_for_accumulation(len(acc)), "accumulation")
     if level_up:
-        await query.message.reply_text(level_up_message(level_up[1]))
+        await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
     # Checkpoint every 5 ayahs
     if len(acc) > 0 and len(acc) % 5 == 0:
-        await query.message.reply_text(
-            checkpoint_message(len(acc)),
-            reply_markup=checkpoint_keyboard()
-        )
+        await context.bot.send_message(chat_id, checkpoint_message(len(acc)),
+                                        reply_markup=checkpoint_keyboard())
         context.user_data["session"] = session
         return MEMO_ACCUMULATION
 
-    # Check surah completion
+    # Surah completion check
     surah_info = get_surah_by_number(session["surah_number"])
     if surah_info and len(acc) >= surah_info["ayah_count"]:
-        await _handle_surah_complete(query.message, context, user_id, session, surah_info)
+        await _handle_surah_complete(chat_id, context, user_id, session, surah_info)
         return ConversationHandler.END
 
-    # Continue to next ayah
-    return await _send_current_ayah(query.message, context, user_id)
+    return await _send_current_ayah(chat_id, context, user_id)
 
 
 async def checkpoint_go(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
-    return await _send_current_ayah(query.message, context, user_id)
+    try:
+        await query.message.delete()
+    except Exception:
+        pass
+    chat_id = query.message.chat_id
+    return await _send_current_ayah(chat_id, context, query.from_user.id)
 
 
 async def checkpoint_save_exit(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -419,12 +494,12 @@ async def checkpoint_save_exit(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 
-async def _handle_surah_complete(message, context, user_id: int, session: dict, surah_info: dict):
+async def _handle_surah_complete(chat_id: int, context, user_id: int, session: dict, surah_info: dict):
     himmat = points_for_surah_complete(surah_info["ayah_count"])
     level_up = award_points(user_id, himmat, "surah_complete")
-    await message.reply_text(surah_complete_message(surah_info["name"], himmat))
+    await context.bot.send_message(chat_id, surah_complete_message(surah_info["name"], himmat))
     if level_up:
-        await message.reply_text(level_up_message(level_up[1]))
+        await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
     # Mark surah completed in user progress
     from services.firebase_service import update_user

@@ -9,9 +9,13 @@ from telegram.ext import (
     MessageHandler, CallbackQueryHandler, filters, CommandHandler
 )
 
-from config import ADMIN_ID, ADMIN_BROADCAST, ADMIN_USER_SEARCH
+from config import (
+    ADMIN_ID, ADMIN_BROADCAST, ADMIN_USER_SEARCH,
+    ADMIN_AYAH_PHOTO_SURAH, ADMIN_AYAH_PHOTO_AYAH, ADMIN_AYAH_PHOTO_UPLOAD,
+)
 from services.firebase_service import (
-    get_user, get_pending_premium_requests, get_all_users
+    get_user, get_pending_premium_requests, get_all_users,
+    set_ayah_photo, delete_ayah_photo,
 )
 from services.stats_service import get_bot_wide_stats
 from services.premium_service import activate_premium, deactivate_premium
@@ -132,19 +136,20 @@ async def admin_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYP
     users   = get_all_users()
     success = 0
     failed  = 0
+    from_chat = update.effective_chat.id
+    msg_id    = update.message.message_id
     progress_msg = await update.message.reply_text(f"⏳ Xabar yuborilmoqda... {len(users)} ta user")
 
     for user in users:
-        uid = user["telegram_id"]
+        uid = user.get("telegram_id")
+        if not uid:
+            continue
         try:
-            if update.message.photo:
-                await context.bot.send_photo(uid, update.message.photo[-1].file_id,
-                                              caption=update.message.caption or "")
-            elif update.message.video:
-                await context.bot.send_video(uid, update.message.video.file_id,
-                                              caption=update.message.caption or "")
-            else:
-                await context.bot.send_message(uid, update.message.text)
+            await context.bot.copy_message(
+                chat_id     = uid,
+                from_chat_id= from_chat,
+                message_id  = msg_id,
+            )
             success += 1
         except Exception:
             failed += 1
@@ -167,6 +172,85 @@ async def admin_pending_requests_callback(update: Update, context: ContextTypes.
     await query.message.reply_text(f"📋 {len(reqs)} ta premium so'rovi kutilmoqda. Tasdiqlash esingizda bo'lsin.")
 
 
+async def admin_ayah_photo_init(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    await query.message.reply_text(
+        "🖼 OYATGA RASM QO'SHISH\n\n"
+        "1️⃣ Avval sura raqamini yuboring (masalan: 1):"
+    )
+    return ADMIN_AYAH_PHOTO_SURAH
+
+
+async def admin_ayah_photo_surah(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    text = update.message.text.strip()
+    if not text.isdigit() or not (1 <= int(text) <= 114):
+        await update.message.reply_text("❌ 1 dan 114 gacha raqam kiriting:")
+        return ADMIN_AYAH_PHOTO_SURAH
+    context.user_data["ayah_photo_surah"] = int(text)
+    await update.message.reply_text(f"✅ Sura: {text}\n\n2️⃣ Oyat raqamini yuboring:")
+    return ADMIN_AYAH_PHOTO_AYAH
+
+
+async def admin_ayah_photo_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    text = update.message.text.strip()
+    if not text.isdigit() or int(text) < 1:
+        await update.message.reply_text("❌ To'g'ri oyat raqami kiriting:")
+        return ADMIN_AYAH_PHOTO_AYAH
+    context.user_data["ayah_photo_ayah"] = int(text)
+    surah = context.user_data["ayah_photo_surah"]
+    await update.message.reply_text(
+        f"✅ Sura {surah}, oyat {text}\n\n3️⃣ Endi rasmni yuboring:"
+    )
+    return ADMIN_AYAH_PHOTO_UPLOAD
+
+
+async def admin_ayah_photo_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    if not update.message.photo:
+        await update.message.reply_text("❌ Iltimos, rasm yuboring (foto sifatida):")
+        return ADMIN_AYAH_PHOTO_UPLOAD
+    surah   = context.user_data.pop("ayah_photo_surah", None)
+    ayah    = context.user_data.pop("ayah_photo_ayah", None)
+    file_id = update.message.photo[-1].file_id
+    set_ayah_photo(surah, ayah, file_id, ADMIN_ID)
+    await update.message.reply_text(
+        f"✅ Sura {surah}, {ayah}-oyatga rasm saqlandi!\n"
+        f"Endi foydalanuvchilar bu oyatni yodlaganda rasm ko'rsatiladi."
+    )
+    return ConversationHandler.END
+
+
+async def admin_ayah_photo_delete_init(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Delete photo: admin sends 'surah_ayah' e.g. '2_255' to delete."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    await query.message.reply_text(
+        "🗑 O'chirish uchun sura va oyat raqamini yuboring.\n"
+        "Format: <sura>_<oyat>  (masalan: 2_255)"
+    )
+
+
+async def admin_ayah_photo_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    parts = update.message.text.strip().split("_")
+    if len(parts) != 2 or not all(p.isdigit() for p in parts):
+        await update.message.reply_text("❌ Format: <sura>_<oyat>  masalan: 2_255")
+        return
+    delete_ayah_photo(int(parts[0]), int(parts[1]))
+    await update.message.reply_text(f"✅ Sura {parts[0]}, {parts[1]}-oyat rasmi o'chirildi.")
+
+
 def build_admin_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
@@ -178,6 +262,16 @@ def build_admin_handler() -> ConversationHandler:
             ],
             ADMIN_BROADCAST: [
                 MessageHandler(filters.ALL & ~filters.COMMAND, admin_broadcast_send),
+            ],
+            ADMIN_AYAH_PHOTO_SURAH: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ayah_photo_surah),
+            ],
+            ADMIN_AYAH_PHOTO_AYAH: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ayah_photo_ayah),
+            ],
+            ADMIN_AYAH_PHOTO_UPLOAD: [
+                MessageHandler(filters.PHOTO, admin_ayah_photo_upload),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ayah_photo_upload),
             ],
         },
         fallbacks=[CommandHandler("start", lambda u, c: ConversationHandler.END)],
@@ -195,3 +289,4 @@ def register_admin_callbacks(app):
     app.add_handler(CallbackQueryHandler(admin_prem30_callback,         pattern="^admin_prem30_"))
     app.add_handler(CallbackQueryHandler(admin_prem7_callback,          pattern="^admin_prem7_"))
     app.add_handler(CallbackQueryHandler(admin_rem_prem_callback,       pattern="^admin_rem_prem_"))
+    app.add_handler(CallbackQueryHandler(admin_ayah_photo_init,         pattern="^admin_ayah_photo$"))

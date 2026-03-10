@@ -589,54 +589,46 @@ def build_admin_handler() -> ConversationHandler:
     )
 
 
-async def _admin_broadcast_interceptor(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """group=-1 interceptor: catches admin's broadcast message and asks for confirmation."""
+async def _admin_message_interceptor(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """group=-1 interceptor: catches admin's broadcast message or contact reply."""
     from telegram.ext import ApplicationHandlerStop
     if update.effective_user is None or update.effective_user.id != ADMIN_ID:
-        return
-    if not context.user_data.get("_bcast"):
         return
     if not update.message:
         return
-    # Store message reference for confirmed send
-    context.user_data.pop("_bcast", None)
-    context.user_data["_bcast_from_chat"] = update.effective_chat.id
-    context.user_data["_bcast_msg_id"]    = update.message.message_id
-    users = get_all_users()
-    await update.message.reply_text(
-        f"📢 TASDIQLASH\n\n"
-        f"Yuqoridagi xabar {len(users)} ta foydalanuvchiga yuboriladi.\n\n"
-        f"Davom etasizmi?",
-        reply_markup=broadcast_confirm_keyboard(),
-    )
-    raise ApplicationHandlerStop
 
+    # 1. Check if Admin is broadcasting
+    if context.user_data.get("_bcast"):
+        context.user_data.pop("_bcast", None)
+        context.user_data["_bcast_from_chat"] = update.effective_chat.id
+        context.user_data["_bcast_msg_id"]    = update.message.message_id
+        users = get_all_users()
+        await update.message.reply_text(
+            f"📢 TASDIQLASH\n\n"
+            f"Yuqoridagi xabar {len(users)} ta foydalanuvchiga yuboriladi.\n\n"
+            f"Davom etasizmi?",
+            reply_markup=broadcast_confirm_keyboard(),
+        )
+        raise ApplicationHandlerStop
 
-async def _admin_reply_interceptor(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """group=-1 interceptor: forwards admin reply to a specific user."""
-    from telegram.ext import ApplicationHandlerStop
-    if update.effective_user is None or update.effective_user.id != ADMIN_ID:
-        return
+    # 2. Check if Admin is replying to a user
     target_id = context.user_data.get("_reply_to")
-    if not target_id:
-        return
-    if not update.message:
-        return
-    context.user_data.pop("_reply_to", None)
-    try:
-        await context.bot.copy_message(
-            chat_id      = target_id,
-            from_chat_id = update.effective_chat.id,
-            message_id   = update.message.message_id,
-        )
-        await context.bot.send_message(
-            target_id,
-            "📩 Admin javob berdi. Yana savol bo'lsa — /start → 📞 Murojaat"
-        )
-        await update.message.reply_text(f"✅ Javob {target_id} ga yuborildi.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Yuborishda xato: {e}")
-    raise ApplicationHandlerStop
+    if target_id:
+        context.user_data.pop("_reply_to", None)
+        try:
+            await context.bot.copy_message(
+                chat_id      = target_id,
+                from_chat_id = update.effective_chat.id,
+                message_id   = update.message.message_id,
+            )
+            await context.bot.send_message(
+                target_id,
+                "📩 Admin javob berdi. Yana savol bo'lsa — /start → 📞 Murojaat"
+            )
+            await update.message.reply_text(f"✅ Javob {target_id} ga yuborildi.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Yuborishda xato: {e}")
+        raise ApplicationHandlerStop
 
 
 def register_admin_callbacks(app):
@@ -646,13 +638,9 @@ def register_admin_callbacks(app):
     app.add_handler(CallbackQueryHandler(admin_broadcast_init,    pattern="^admin_broadcast$"))
     app.add_handler(CallbackQueryHandler(admin_broadcast_confirm, pattern="^broadcast_confirm$"))
     app.add_handler(CallbackQueryHandler(admin_broadcast_cancel,  pattern="^broadcast_cancel$"))
-    # group=-1: admin message interceptors (broadcast preview, contact reply)
+    # group=-1: admin message interceptor (broadcast preview, contact reply)
     app.add_handler(
-        MessageHandler(filters.ALL & ~filters.COMMAND, _admin_broadcast_interceptor),
-        group=-1,
-    )
-    app.add_handler(
-        MessageHandler(filters.ALL & ~filters.COMMAND, _admin_reply_interceptor),
+        MessageHandler(filters.ALL & ~filters.COMMAND, _admin_message_interceptor),
         group=-1,
     )
     app.add_handler(CallbackQueryHandler(admin_stats_callback,            pattern="^admin_stats$"))

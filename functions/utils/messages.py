@@ -11,7 +11,7 @@ def welcome_message(user_name: str) -> str:
         f"Assalomu alaykum, {user_name}!\n\n"
         f"Tabriklaymiz! Siz Qur'on yodlash yo'lida muhim qadam qo'ydingiz!\n\n"
         f"🌟 Alloh taolo sizga bu yo'lda baraka va sobitqadamlik ato etsin!\n\n"
-        f"──────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📌 BOT QANDAY ISHLAYDI:\n\n"
         f"📗 YODLASH — Oyatlarni ilmiy usulda yodlash\n"
         f"   • Juz yoki surani tanlaysiz\n"
@@ -23,7 +23,7 @@ def welcome_message(user_name: str) -> str:
         f"🎧 TINGLASH — Mashhur qorilar tilovati\n\n"
         f"🏆 REYTING — Top 50 foydalanuvchi\n\n"
         f"💎 PREMIUM — Kuniga 5 oyat BEPUL | Premium: limitsiz\n"
-        f"──────────────────\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
         f"3 kunlik BEPUL Premium faollashtirildi! 🎁"
     )
 
@@ -32,8 +32,6 @@ def onboarding_step_0() -> str:
     return (
         "🕌 Assalomu alaykum! Quron Yodlaymiz botiga xush kelibsiz!\n\n"
         "Bu bot sizga Qur'oni Karimni ilmiy va samarali usulda yodlashga yordam beradi.\n\n"
-        "Loyiha millionlab insonlarga foyda keltirishi uchun tinmay yaxshilanib boramiz "
-        "in shaa ALLOH, duolaringizdan umidvormiz 🤲\n\n"
         "Boshlash uchun bir necha savolga javob bering 👇"
     )
 
@@ -77,22 +75,20 @@ def referral_bonus_message(new_user_name: str, total_points: int) -> str:
 def ayah_header(surah_name: str, surah_number: int,
                 ayah_number: int, total_ayahs: int) -> str:
     return (
-        f"──────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📖 {surah_name.upper()} SURASI | {surah_number}-sura\n"
         f"🔢 {ayah_number}-oyat / {total_ayahs} oyat\n"
-        f"──────────────────"
+        f"━━━━━━━━━━━━━━━━━━━━"
     )
 
 
 def ayah_text_message(arabic: str, uzbek: str, instruction: str, count: int) -> str:
     return (
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{arabic}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📝 {uzbek}\n\n"
-        f"──────────────────────\n"
+        f"{arabic}\n\n"
+        f"📝 O'zbekcha: {uzbek}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
         f"{instruction}\n"
-        f"──────────────────────"
+        f"━━━━━━━━━━━━━━━━━━━━"
     )
 
 
@@ -107,25 +103,21 @@ def rep_instruction(count: int) -> str:
 
 
 def accumulation_message(ayahs: list) -> str:
-    n = len(ayahs)
-    lines = [
-        "──────────────────",
-        f"🔗 {n} OYATNI BIRGA TAKRORLANG",
-        "──────────────────\n"
-    ]
-    for i, a in enumerate(ayahs, 1):
-        lines.append(f"{i}. {a['arabic']}\n")
-    lines.append("──────────────────")
-    lines.append(f"🔄 Barcha {n} oyatni birga 5 marotaba o'qing")
-    lines.append("──────────────────")
+    lines = ["━━━━━━━━━━━━━━━━━━━━", "🔗 TAKRORLASH VAQTI", "━━━━━━━━━━━━━━━━━━━━\n"]
+    for a in ayahs:
+        lines.append(a["arabic"])
+        lines.append(f"📝 {a['uzbek']}\n")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"📚 Barcha oyatlarni birga 7 marotaba o'qing")
+    lines.append("━━━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
 
 
 def checkpoint_message(count: int) -> str:
     return (
-        f"──────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
         f"✨ Ajoyib! {count} oyat yodladingiz!\n"
-        f"──────────────────"
+        f"━━━━━━━━━━━━━━━━━━━━"
     )
 
 
@@ -176,31 +168,31 @@ def profile_message(data: dict, period: str = "today") -> str:
     rank_str = f"#{data['rank']}" if data["rank"] else "—"
 
     lines = [
-        f"──────────────────────",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"📊 SAHIFAM — {data['full_name']}",
-        f"──────────────────────",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"",
         f"💫 HIMMAT BALLARI: {data['himmat_fmt']} ✨",
         f"🏆 Reyting o'rningiz: {rank_str}",
         f"{data['level_name']}",
         f"",
-        f"──────────────────────",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"📈 UMUMIY STATISTIKA",
-        f"──────────────────────",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"📖 Jami oyatlar o'qildi: {data['total_verses']:,}",
         f"🔄 Jami takrorlar: {data['total_reps']:,}",
         f"⏱ Jami vaqt: {data['total_time']}",
         f"🔥 Joriy streak: {data['streak']} kun",
         f"🏅 Eng uzun streak: {data['longest_streak']} kun",
         f"",
-        f"──────────────────────",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"📅 {period_label}:",
         f"Oyatlar: {p_verses} | Takrorlar: {p_reps} | Vaqt: {p_mins} daqiqa",
         f"",
-        f"──────────────────────",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
         f"📊 30 JUZ PROGRESSI",
         f"[{data['quran_progress_bar']}] {data['percent_complete']}%",
-        f"──────────────────────",
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
     ]
 
     if data.get("is_premium"):
@@ -228,9 +220,9 @@ def leaderboard_message(entries: list, user_id: int, user_rank: int,
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     lines  = [
         "🏆 FAOLLAR REYTINGI",
-        "──────────────────────",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━",
         "TOP 50 — OYLIK REYTING",
-        "──────────────────────",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━",
     ]
 
     for i, e in enumerate(entries[:50], 1):
@@ -253,13 +245,13 @@ def leaderboard_message(entries: list, user_id: int, user_rank: int,
 
     if user_rank > 50:
         lines.extend([
-            "──────────────────────",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━",
             f"(#{user_rank-3} yuguruvchi):",
         ])
         if user_entry:
             lines.append(f"➡️ #{user_rank} SIZNING O'RNINGIZ   {user_entry.get('total_verses',0)} oyat | {user_entry.get('himmat_points',0):,} 💫")
 
-    lines.append("──────────────────────")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines)
 
 
@@ -269,31 +261,31 @@ def premium_menu_message(is_active: bool, expiry: Optional[str]) -> str:
     status = f"💎 Premium faol — {expiry} gacha" if is_active else "⚡ Bepul rejimda"
     return (
         f"💎 PREMIUM\n\n"
-        f"{status}\n\n"
-        f"──────────────────\n"
-        f"🆓 BEPUL:\n"
-        f"  • Kuniga 5 oyat\n"
-        f"  • Barcha qorilar\n"
-        f"  • Asosiy statistika\n"
-        f"  • Reyting\n\n"
-        f"💎 PREMIUM — 10,000 so'm/oy:\n"
-        f"  • Limitsiz oyat ♾️\n"
-        f"  • Barcha qorilar\n"
-        f"  • To'liq statistika\n"
-        f"  • Reyting\n\n"
-        f"──────────────────\n"
-        f"TO'LOV:\n"
-        f"💳 5614 6830 0539 3277\n"
-        f"👤 M.N.\n\n"
-        f"🎁 Har bir premium, imkoniyati bo'lmagan bo'lajak qorilar uchun Bepul Quron yodlash funksiya va imkoniyatlari ko'payishiga va loyihani rivojlanishiga yordam beradi. "
-        f"To'lov qilgach, chekni yuboring 👇"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"BEPUL vs PREMIUM\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"         BEPUL    PREMIUM\n"
+        f"Oyat/kun    5      ♾️ Limitsiz\n"
+        f"Qorilar    Barchasi  Barchasi\n"
+        f"Statistika Asosiy   To'liq\n"
+        f"Reyting    ✅       ✅\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💎 PREMIUM NARXI: 10,000 so'm/oy\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"TO'LOV USULI:\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💳 Karta: 5614 6830 0539 3277\n"
+        f"👤 Egasi: M.Nodirjon\n\n"
+        f"📋 To'lov qilgach, chekni yuboring\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{status}"
     )
 
 
 def premium_trial_offer() -> str:
     return (
         "🎁 SIZ UCHUN MAXSUS TAKLIF!\n\n"
-        "1 kunlik BEPUL Premium sinab ko'ring!\n"
+        "3 kunlik BEPUL Premium sinab ko'ring!\n"
         "Barcha imkoniyatlar ochiq!"
     )
 
@@ -321,53 +313,31 @@ def premium_rejected_message(reason: str) -> str:
 def admin_menu_message(stats: dict) -> str:
     return (
         f"🔐 ADMIN PANEL\n\n"
-        f"──────────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📊 UMUMIY STATISTIKA\n"
-        f"──────────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"👥 Jami foydalanuvchilar: {stats['total_users']:,}\n"
         f"💎 Premium foydalanuvchilar: {stats['premium_users']}\n"
         f"📈 Bugun qo'shilganlar: {stats['new_today']}\n"
-        f"✅ Bugun faol: {stats.get('active_today', 0)}\n"
         f"🔥 Faol (7 kun): {stats['active_7d']}\n"
-        f"──────────────────────"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
 
 def admin_user_info_message(user: dict) -> str:
     stats      = user.get("stats", {})
     premium    = user.get("premium", {})
-    prem_label = "✅ Ha (faol)" if premium.get("is_active") else "❌ Yoq"
-    prem_exp   = premium.get("expiry_date", "")
-    from datetime import datetime as _dt
-    reg_date   = user.get("registration_date")
-    reg_str    = reg_date.strftime("%d.%m.%Y") if isinstance(reg_date, _dt) else str(reg_date or "—")
-    last_act   = stats.get("last_activity_date")
-    last_str   = last_act.strftime("%d.%m.%Y %H:%M") if isinstance(last_act, _dt) else str(last_act or "—")
-    total_mins = stats.get("total_minutes", 0)
-    hours      = total_mins // 60
-    mins       = total_mins % 60
-    time_str   = f"{hours}s {mins}d" if hours else f"{mins} daqiqa"
-    username   = f"@{user['username']}" if user.get("username") else "—"
-    uid        = user.get("telegram_id", "—")
+    prem_label = "Ha (faol)" if premium.get("is_active") else "Yoq"
     return (
-        f"👤 FOYDALANUVCHI:\n"
-        f"──────────────────────\n"
+        f"FOYDALANUVCHI MA'LUMOTLARI:\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Ism: {user.get('full_name', '—')}\n"
-        f"Username: {username}\n"
-        f"ID: {uid}\n"
-        f"Ro'yxatdan: {reg_str}\n"
-        f"Oxirgi faollik: {last_str}\n"
-        f"──────────────────────\n"
-        f"📊 STATISTIKA:\n"
-        f"📖 Jami oyatlar: {stats.get('total_verses_read', 0):,}\n"
-        f"🔄 Jami takrorlar: {stats.get('total_repetitions', 0):,}\n"
-        f"⏱ Jami vaqt: {time_str}\n"
-        f"💫 Himmat ball: {stats.get('himmat_points', 0):,}\n"
-        f"🔥 Streak: {stats.get('current_streak_days', 0)} kun\n"
-        f"──────────────────────\n"
-        f"💎 Premium: {prem_label}"
-        + (f" ({prem_exp})" if premium.get("is_active") and prem_exp else "")
-        + f"\n──────────────────────"
+        f"Username: {user.get('username', '—')}\n"
+        f"ID: {user.get('telegram_id', '—')}\n"
+        f"Premium: {prem_label}\n"
+        f"Oyatlar: {stats.get('total_verses_read', 0)}\n"
+        f"Himmat: {stats.get('himmat_points', 0):,}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
 
@@ -393,20 +363,20 @@ def referral_message(user: dict, bot_username: str) -> str:
     total_bonus = ref_count * 15
     return (
         f"👥 DO'ST TAKLIF QILISH\n\n"
-        f"──────────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🎁 MUKOFOT TIZIMI\n"
-        f"──────────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"Har bir taklif qilgan do'stingiz\n"
         f"uchun ikkalangizga +15 Himmat ball!\n\n"
-        f"──────────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"🔗 SIZNING TAKLIF HAVOLANGIZ:\n"
-        f"──────────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"{ref_link}\n\n"
-        f"──────────────────────\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"📊 STATISTIKA:\n"
         f"Taklif qilganlar: {ref_count} kishi\n"
         f"Jami ball: +{total_bonus} Himmat 💫\n"
-        f"──────────────────────"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
 
 

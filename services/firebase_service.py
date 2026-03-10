@@ -566,10 +566,54 @@ def get_notification_settings() -> tuple:
     return (8, 0, 1)
 
 
+def get_notification_times_list() -> list:
+    """Returns list of (hour, minute) tuples for each scheduled notification.
+    Uses explicit 'times' list if saved, otherwise auto-spaces from base time."""
+    if not db:
+        return [(8, 0)]
+    try:
+        doc = db.collection("settings").document("notifications").get()
+        if doc.exists:
+            data  = doc.to_dict()
+            times = data.get("times", [])
+            count = int(data.get("count", 1))
+            if times and len(times) == count:
+                result = []
+                for t in times:
+                    parts = str(t).split(":")
+                    result.append((int(parts[0]), int(parts[1])))
+                return result
+            # fallback: auto-space from base time
+            base_h  = int(data.get("hour", 8))
+            base_m  = int(data.get("minute", 0))
+            intervals = {1: 0, 2: 8, 3: 6, 4: 4, 5: 3}
+            gap = intervals.get(count, 0)
+            return [((base_h + i * gap) % 24, base_m) for i in range(count)]
+    except Exception as e:
+        logger.error(f"get_notification_times_list error: {e}")
+    return [(8, 0)]
+
+
 def get_notification_time() -> tuple:
     """Backward-compat wrapper. Returns (hour, minute)."""
     h, m, _ = get_notification_settings()
     return (h, m)
+
+
+def set_notification_times(times: list):
+    """Saves explicit list of 'HH:MM' time strings and updates base time + count."""
+    if not db or not times:
+        return
+    try:
+        first = times[0].split(":")
+        db.collection("settings").document("notifications").set({
+            "hour":   int(first[0]),
+            "minute": int(first[1]),
+            "count":  len(times),
+            "times":  times,
+        }, merge=True)
+    except Exception as e:
+        logger.error(f"set_notification_times error: {e}")
 
 
 def set_notification_time(hour: int, minute: int, count: int = None):
@@ -577,7 +621,7 @@ def set_notification_time(hour: int, minute: int, count: int = None):
     if not db:
         return
     try:
-        data = {"hour": hour, "minute": minute}
+        data = {"hour": hour, "minute": minute, "times": []}  # clear explicit times
         if count is not None:
             data["count"] = count
         db.collection("settings").document("notifications").set(data, merge=True)
@@ -591,7 +635,7 @@ def set_notification_count(count: int):
         return
     try:
         db.collection("settings").document("notifications").set(
-            {"count": count}, merge=True
+            {"count": count, "times": []}, merge=True  # clear explicit times on count change
         )
     except Exception as e:
         logger.error(f"set_notification_count error: {e}")

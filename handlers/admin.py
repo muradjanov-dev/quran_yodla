@@ -17,8 +17,8 @@ from config import (
 from services.firebase_service import (
     get_user, get_pending_premium_requests, get_all_users,
     set_ayah_photo, delete_ayah_photo,
-    get_notification_time, get_notification_settings, set_notification_time,
-    set_notification_count,
+    get_notification_time, get_notification_settings, get_notification_times_list,
+    set_notification_time, set_notification_times, set_notification_count,
     get_premium_request, update_premium_request,
 )
 from services.stats_service import get_bot_wide_stats
@@ -82,13 +82,18 @@ async def admin_user_mgmt_callback(update: Update, context: ContextTypes.DEFAULT
 async def admin_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    raw     = update.message.text.strip().lstrip("@")
-    db_user = None
+    raw = update.message.text.strip().lstrip("@")
 
+    # If input looks like a menu button (contains emoji/spaces/non-alphanumeric),
+    # silently exit the conversation so other handlers can process it
+    clean = raw.replace("_", "").replace(".", "").replace("-", "")
+    if not clean.isalnum():
+        return ConversationHandler.END
+
+    db_user = None
     if raw.isdigit():
         db_user = get_user(int(raw))
     else:
-        # Search by username
         users = get_all_users()
         for u in users:
             un = u.get("username", "").lstrip("@").lower()
@@ -97,7 +102,7 @@ async def admin_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 break
 
     if not db_user:
-        await update.message.reply_text("❌ Foydalanuvchi topilmadi.")
+        await update.message.reply_text("❌ Foydalanuvchi topilmadi. ID yoki @username kiriting:")
         return ADMIN_USER_SEARCH
 
     context.user_data["admin_target"] = db_user["telegram_id"]
@@ -265,19 +270,17 @@ async def admin_all_users_callback(update: Update, context: ContextTypes.DEFAULT
     for i, u in enumerate(users[start:end], start + 1):
         uid      = u.get("telegram_id", 0)
         name     = (u.get("full_name") or "Anonim")[:16]
-        username = f"@{u['username']}" if u.get("username") else ""
+        username = f"@{u['username']}" if u.get("username") else "—"
         stats    = u.get("stats", {})
         verses   = stats.get("total_verses_read", 0)
         himmat   = stats.get("himmat_points", 0)
         mins     = stats.get("total_minutes", 0)
         streak   = stats.get("current_streak_days", 0)
         prem     = "💎" if u.get("premium", {}).get("is_active") else ""
-        info     = f"📖{verses} 💫{himmat:,} ⏱{mins}d 🔥{streak}"
-        line     = f"{i}. [{name}](tg://user?id={uid}){prem}"
-        if username:
-            line += f" {username}"
-        line += f"\n    {info}"
-        lines.append(line)
+        lines.append(
+            f"{i}. {name}{prem} | {username} | ID: {uid}\n"
+            f"   📖{verses} 💫{himmat:,} ⏱{mins}d 🔥{streak}"
+        )
 
     text = "\n".join(lines)
 
@@ -292,7 +295,6 @@ async def admin_all_users_callback(update: Update, context: ContextTypes.DEFAULT
 
     await query.message.reply_text(
         text,
-        parse_mode            = "Markdown",
         reply_markup          = keyboard,
         disable_web_page_preview = True,
     )
@@ -453,57 +455,93 @@ async def admin_notif_time_init(update: Update, context: ContextTypes.DEFAULT_TY
     if query.from_user.id != ADMIN_ID:
         await query.answer(); return
     await query.answer()
-    hour, minute = get_notification_time()
-    await query.message.reply_text(
-        f"⏰ BILDIRISHNOMA VAQTI\n\n"
-        f"Hozirgi vaqt: {hour:02d}:{minute:02d} (Toshkent)\n\n"
-        f"Yangi vaqtni HH:MM formatida yuboring:\n"
-        f"(masalan: 07:30, 09:00, 20:00)"
-    )
+    _, _, count = get_notification_settings()
+    times = get_notification_times_list()
+    current = ", ".join(f"{h:02d}:{m:02d}" for h, m in times)
+    if count > 1:
+        await query.message.reply_text(
+            f"⏰ BILDIRISHNOMA VAQTLARI ({count}x)\n\n"
+            f"Hozirgi vaqtlar: {current} (Toshkent)\n\n"
+            f"{count} ta vaqtni vergul bilan kiriting:\n"
+            f"(masalan: 05:50, 22:30)"
+        )
+    else:
+        await query.message.reply_text(
+            f"⏰ BILDIRISHNOMA VAQTI\n\n"
+            f"Hozirgi vaqt: {current} (Toshkent)\n\n"
+            f"Yangi vaqtni HH:MM formatida yuboring:\n"
+            f"(masalan: 07:30, 09:00, 20:00)"
+        )
     return ADMIN_NOTIF_TIME
+
+
+def _parse_times(text: str) -> list:
+    """Parse 'HH:MM' or 'HH:MM, HH:MM, ...' → list of 'HH:MM' strings, or [] on error."""
+    result = []
+    for part in text.replace("،", ",").split(","):
+        part = part.strip()
+        pieces = part.split(":")
+        if len(pieces) != 2 or not all(p.strip().isdigit() for p in pieces):
+            return []
+        h, m = int(pieces[0]), int(pieces[1])
+        if not (0 <= h <= 23 and 0 <= m <= 59):
+            return []
+        result.append(f"{h:02d}:{m:02d}")
+    return result
 
 
 async def admin_notif_time_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
-    text = update.message.text.strip()
-    parts = text.split(":")
-    if len(parts) != 2 or not all(p.isdigit() for p in parts):
-        await update.message.reply_text("❌ Format noto'g'ri. HH:MM kiriting (masalan: 08:00):")
-        return ADMIN_NOTIF_TIME
-    hour, minute = int(parts[0]), int(parts[1])
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        await update.message.reply_text("❌ Soat 0-23, daqiqa 0-59 bo'lishi kerak:")
-        return ADMIN_NOTIF_TIME
-
     _, _, count = get_notification_settings()
-    set_notification_time(hour, minute)
+    times = _parse_times(update.message.text.strip())
 
-    # Reschedule all notification jobs with new base time
+    if not times:
+        await update.message.reply_text(
+            "❌ Format noto'g'ri.\n"
+            f"{'Vergul bilan ' + str(count) + ' ta vaqt' if count > 1 else 'HH:MM'} kiriting\n"
+            f"(masalan: {'05:50, 22:30' if count > 1 else '08:00'}):"
+        )
+        return ADMIN_NOTIF_TIME
+
+    if len(times) != count:
+        await update.message.reply_text(
+            f"❌ {count} ta vaqt kerak, {len(times)} ta kiritildi.\n"
+            f"(masalan: {'05:50, 22:30' if count == 2 else ', '.join(['HH:MM']*count)}):"
+        )
+        return ADMIN_NOTIF_TIME
+
+    set_notification_times(times)
+
+    # Reschedule all notification jobs
     try:
         import pytz
         from apscheduler.triggers.cron import CronTrigger
         scheduler = context.application.bot_data.get("scheduler")
         if scheduler:
             TZ = pytz.timezone("Asia/Tashkent")
-            intervals = {1: 0, 2: 8, 3: 6, 4: 4, 5: 3}
-            interval_h = intervals.get(count, 0)
-            for i in range(count):
-                job_hour = (hour + i * interval_h) % 24
+            for i, t in enumerate(times):
+                h, m = int(t.split(":")[0]), int(t.split(":")[1])
                 try:
                     scheduler.reschedule_job(
                         f"daily_notifications_{i}",
-                        CronTrigger(hour=job_hour, minute=minute, timezone=TZ),
+                        CronTrigger(hour=h, minute=m, timezone=TZ),
                     )
                 except Exception:
-                    pass  # job may not exist if count changed
-            logger.info(f"Notification time rescheduled to {hour:02d}:{minute:02d} × {count}")
+                    scheduler.add_job(
+                        context.application.bot_data["_daily_notif_fn"],
+                        CronTrigger(hour=h, minute=m, timezone=TZ),
+                        id=f"daily_notifications_{i}",
+                        replace_existing=True,
+                    )
+            logger.info(f"Notifications rescheduled: {times}")
     except Exception as e:
         logger.error(f"Reschedule error: {e}")
 
+    times_str = " va ".join(times) if len(times) <= 2 else ", ".join(times)
     await update.message.reply_text(
-        f"✅ Bildirishnoma vaqti o'zgartirildi!\n"
-        f"Endi har kuni soat {hour:02d}:{minute:02d} da xabar yuboriladi (Toshkent vaqti)."
+        f"✅ Bildirishnoma vaqtlari o'zgartirildi!\n"
+        f"Endi har kuni soat {times_str} da xabar yuboriladi (Toshkent vaqti)."
     )
     return ConversationHandler.END
 

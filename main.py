@@ -16,7 +16,7 @@ from config import (
     BOT_TOKEN, WEBHOOK_URL, PORT, ADMIN_ID, LOCAL_TZ
 )
 import firebase_config  # noqa: E402 — ensures Firebase is initialized at startup
-from services.firebase_service import get_notification_settings  # noqa
+from services.firebase_service import get_notification_settings, get_notification_times_list  # noqa
 
 # ─── Release Notes (sent to admin on every startup) ───────────────────────────
 RELEASE_NOTES = """
@@ -67,24 +67,21 @@ def setup_scheduler(app: Application):
     scheduler = AsyncIOScheduler(timezone=TZ)
 
     # Read saved notification settings (time + count)
-    notif_hour, notif_minute, notif_count = get_notification_settings()
-    logger.info(f"Notification: {notif_hour:02d}:{notif_minute:02d} × {notif_count}/day")
+    _, _, notif_count = get_notification_settings()
+    notif_times = get_notification_times_list()
+    logger.info(f"Notifications: {notif_times} × {notif_count}/day")
 
-    # Daily notifications — support 1-5 per day evenly spaced
+    # Daily notifications — support 1-5 per day with explicit or auto-spaced times
     async def _daily_notif():
         await send_daily_notifications(app.bot)
 
     # Store fn reference so admin count-change handler can re-use it
     app.bot_data["_daily_notif_fn"] = _daily_notif
 
-    # Interval hours between jobs for each count option
-    intervals = {1: 0, 2: 8, 3: 6, 4: 4, 5: 3}
-    interval_h = intervals.get(notif_count, 0)
-    for i in range(notif_count):
-        job_hour = (notif_hour + i * interval_h) % 24
+    for i, (job_hour, job_minute) in enumerate(notif_times):
         scheduler.add_job(
             _daily_notif,
-            CronTrigger(hour=job_hour, minute=notif_minute, timezone=TZ),
+            CronTrigger(hour=job_hour, minute=job_minute, timezone=TZ),
             id=f"daily_notifications_{i}",
             replace_existing=True,
         )

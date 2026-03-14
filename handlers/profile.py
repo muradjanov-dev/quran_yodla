@@ -1,5 +1,5 @@
 """
-profile.py — Sahifam (My Page) handler.
+profile.py — Sahifam (My Page) handler and Settings.
 """
 
 import logging
@@ -7,7 +7,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, CallbackQueryHandler, MessageHandler, filters
 
 from services.stats_service import get_profile_data, format_time
-from utils.keyboards import profile_period_keyboard
+from utils.keyboards import profile_period_keyboard, settings_keyboard, settings_notif_count_keyboard
 from utils.messages import profile_message, share_result_message
 
 logger = logging.getLogger(__name__)
@@ -66,39 +66,127 @@ async def profile_share_callback(update: Update, context: ContextTypes.DEFAULT_T
     await query.message.reply_text(share_text)
 
 
-async def profile_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Toggle notification on/off."""
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+async def show_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Called from main menu: '⚙️ Sozlamalar'"""
+    from services.firebase_service import get_user
+    user_id = update.effective_user.id
+    msg = update.message or (update.callback_query and update.callback_query.message)
+    if update.callback_query:
+        await update.callback_query.answer()
+
+    db_user = get_user(user_id)
+    notif_enabled = True
+    notif_count   = 1
+    if db_user:
+        notif_enabled = db_user.get("notification_settings", {}).get("enabled", True)
+        notif_count   = db_user.get("notification_settings", {}).get("daily_count", 1)
+
+    await msg.reply_text(
+        "⚙️ SOZLAMALAR\n\n"
+        "Quyidagi sozlamalarni o'zgartiring:",
+        reply_markup=settings_keyboard(notif_enabled, notif_count)
+    )
+
+
+async def settings_notif_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from services.firebase_service import get_user, update_user
     query   = update.callback_query
     await query.answer()
     user_id = query.from_user.id
-
     db_user = get_user(user_id)
     if not db_user:
         return
-
-    notif_enabled = db_user.get("notification_settings", {}).get("enabled", True)
-    new_state     = not notif_enabled
+    current = db_user.get("notification_settings", {}).get("enabled", True)
+    new_state = not current
     update_user(user_id, {"notification_settings.enabled": new_state})
-
-    status_text = "yoqildi" if new_state else "o'chirildi"
-    icon        = "🔔" if new_state else "🔕"
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            f"{'🔕 O\'chirish' if new_state else '🔔 Yoqish'}",
-            callback_data="profile_settings"
+    count = db_user.get("notification_settings", {}).get("daily_count", 1)
+    icon = "🔔" if new_state else "🔕"
+    status = "yoqildi" if new_state else "o'chirildi"
+    try:
+        await query.message.edit_reply_markup(
+            reply_markup=settings_keyboard(new_state, count)
         )
-    ]])
+    except Exception:
+        pass
+    await query.answer(f"{icon} Eslatmalar {status}!", show_alert=True)
+
+
+async def settings_notif_count_init(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    from services.firebase_service import get_user
+    db_user = get_user(query.from_user.id)
+    current = 1
+    if db_user:
+        current = db_user.get("notification_settings", {}).get("daily_count", 1)
     await query.message.reply_text(
-        f"{icon} Kunlik bildirishnomalar {status_text}!\n\n"
-        f"Har kuni soat 08:00 da (Toshkent) xabar keladi.",
-        reply_markup=keyboard
+        "🔢 Kunlik eslatmalar sonini tanlang (1-5):",
+        reply_markup=settings_notif_count_keyboard(current)
     )
 
 
+async def settings_notif_count_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    count = int(query.data.split("_")[-1])
+    from services.firebase_service import update_user, get_user
+    update_user(query.from_user.id, {"notification_settings.daily_count": count})
+    db_user = get_user(query.from_user.id)
+    notif_enabled = True
+    if db_user:
+        notif_enabled = db_user.get("notification_settings", {}).get("enabled", True)
+    try:
+        await query.message.edit_text(
+            f"✅ Kunlik eslatmalar soni: {count}x ga o'zgartirildi!",
+            reply_markup=settings_keyboard(notif_enabled, count)
+        )
+    except Exception:
+        await query.message.reply_text(f"✅ Kunlik eslatmalar soni: {count}x")
+
+
+async def settings_back(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await show_settings(update, context)
+
+
+async def settings_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    from services.firebase_service import get_user
+    from utils.keyboards import referral_share_keyboard
+    from utils.messages import referral_message
+    db_user = get_user(query.from_user.id)
+    if not db_user:
+        return
+    bot_username = (await context.bot.get_me()).username
+    await query.message.reply_text(
+        referral_message(db_user, bot_username),
+        reply_markup=referral_share_keyboard(
+            f"https://t.me/{bot_username}?start=ref_{db_user.get('referral_code', '')}"
+        )
+    )
+
+
+async def settings_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("🔧 Til o'zgartirish tez orada qo'shiladi!", show_alert=True)
+
+
+async def profile_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Legacy: redirect to settings."""
+    await show_settings(update, context)
+
+
 def register_profile_handlers(app):
-    app.add_handler(MessageHandler(filters.Regex("^📊 Sahifam$"), show_profile))
-    app.add_handler(CallbackQueryHandler(profile_period_callback,  pattern="^profile_period_"))
-    app.add_handler(CallbackQueryHandler(profile_share_callback,   pattern="^profile_share$"))
-    app.add_handler(CallbackQueryHandler(profile_settings_callback, pattern="^profile_settings$"))
+    app.add_handler(MessageHandler(filters.Regex("^📊 Sahifam$"),    show_profile))
+    app.add_handler(MessageHandler(filters.Regex("^⚙️ Sozlamalar$"), show_settings))
+    app.add_handler(CallbackQueryHandler(profile_period_callback,    pattern="^profile_period_"))
+    app.add_handler(CallbackQueryHandler(profile_share_callback,     pattern="^profile_share$"))
+    app.add_handler(CallbackQueryHandler(profile_settings_callback,  pattern="^profile_settings$"))
+    app.add_handler(CallbackQueryHandler(settings_notif_toggle,      pattern="^settings_notif_toggle$"))
+    app.add_handler(CallbackQueryHandler(settings_notif_count_init,  pattern="^settings_notif_count$"))
+    app.add_handler(CallbackQueryHandler(settings_notif_count_set,   pattern="^settings_nc_"))
+    app.add_handler(CallbackQueryHandler(settings_back,              pattern="^settings_back$"))
+    app.add_handler(CallbackQueryHandler(settings_referral,          pattern="^settings_referral$"))
+    app.add_handler(CallbackQueryHandler(settings_lang,              pattern="^settings_lang$"))

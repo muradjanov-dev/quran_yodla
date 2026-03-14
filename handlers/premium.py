@@ -96,18 +96,29 @@ async def receipt_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Odatda 1-24 soat ichida javob beriladi."
     )
 
-    # Notify admin
+    # Notify admin — first try as photo with caption, fall back to text + forwarded photo
     admin_text = admin_premium_request_message({"full_name": full_name, "username": username, "telegram_id": user_id})
     try:
         admin_msg = await context.bot.send_photo(
-            chat_id    = ADMIN_ID,
-            photo      = file_id,
-            caption    = admin_text,
+            chat_id      = ADMIN_ID,
+            photo        = file_id,
+            caption      = admin_text,
             reply_markup = admin_premium_decision_keyboard(req_id)
         )
         update_premium_request(req_id, {"admin_message_id": admin_msg.message_id})
+        logger.info(f"Admin notified about premium request {req_id} from user {user_id}")
     except Exception as e:
-        logger.error(f"Admin notify failed: {e}")
+        logger.error(f"Admin photo notify failed: {e}")
+        # Fallback: send text message + forward the photo separately
+        try:
+            await context.bot.send_message(
+                chat_id      = ADMIN_ID,
+                text         = admin_text,
+                reply_markup = admin_premium_decision_keyboard(req_id)
+            )
+            await context.bot.send_photo(chat_id=ADMIN_ID, photo=file_id)
+        except Exception as e2:
+            logger.error(f"Admin fallback notify failed: {e2}")
 
     return ConversationHandler.END
 

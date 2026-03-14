@@ -34,7 +34,8 @@ from utils.keyboards import (
 )
 from utils.messages import (
     ayah_header, ayah_text_message, rep_instruction, accumulation_message,
-    checkpoint_message, limit_reached_message, surah_complete_message, level_up_message
+    checkpoint_message, limit_reached_message, surah_complete_message,
+    level_up_message, ayah_progress_message
 )
 from utils.helpers import get_surahs_in_juz, get_surah_by_number, get_next_surah_in_juz
 
@@ -338,17 +339,6 @@ async def rep_3_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
     ayah_data = context.user_data.get("_cur_ayah") or session.get("current_ayah_data", {})
-    mid_msgs = context.user_data.get("mid_msgs", [])
-
-    # Re-show photo for 7x repetition
-    photo_fid = ayah_data.get("photo_file_id")
-    if photo_fid:
-        try:
-            m = await context.bot.send_photo(chat_id, photo=photo_fid)
-            mid_msgs.append(m.message_id)
-        except Exception as e:
-            logger.warning(f"Rep-7 photo send failed: {e}")
-    context.user_data["mid_msgs"] = mid_msgs
 
     await context.bot.send_message(
         chat_id,
@@ -390,17 +380,6 @@ async def rep_7_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
     ayah_data = context.user_data.get("_cur_ayah") or session.get("current_ayah_data", {})
-    mid_msgs = context.user_data.get("mid_msgs", [])
-
-    # Re-show photo for 11x repetition
-    photo_fid = ayah_data.get("photo_file_id")
-    if photo_fid:
-        try:
-            m = await context.bot.send_photo(chat_id, photo=photo_fid)
-            mid_msgs.append(m.message_id)
-        except Exception as e:
-            logger.warning(f"Rep-11 photo send failed: {e}")
-    context.user_data["mid_msgs"] = mid_msgs
 
     await context.bot.send_message(
         chat_id,
@@ -474,10 +453,21 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
             close_session(session["session_id"])
             return ConversationHandler.END
 
+    # Show surah progress
+    surah_num  = session.get("surah_number")
+    surah_info = get_surah_by_number(surah_num) if surah_num else None
+    if surah_info and surah_info.get("ayah_count", 0) > 1:
+        try:
+            await context.bot.send_message(
+                chat_id,
+                ayah_progress_message(surah_info["name"], len(acc), surah_info["ayah_count"])
+            )
+        except Exception:
+            pass
+
     # Ayah 1: skip accumulation, go directly to ayah 2
     # Ayah 2+: send all accumulated ayahs together for 5x joint repetition
     if len(acc) == 1:
-        await context.bot.send_message(chat_id, "✅ 1-oyat yodlandi! Endi 2-oyatni o'rganamiz 👇")
         return await _send_current_ayah(chat_id, context, user_id)
 
     return await _send_accumulation(chat_id, context, user_id, acc)

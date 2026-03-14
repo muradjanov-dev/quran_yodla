@@ -35,4 +35,5 @@ async def show_referral(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def register_referral_handlers(app):
+    # Keep old trigger in case some users still have old keyboard cached
     app.add_handler(MessageHandler(filters.Regex("^👥 Do'st taklif$"), show_referral))

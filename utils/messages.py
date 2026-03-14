@@ -11,20 +11,18 @@ def welcome_message(user_name: str) -> str:
         f"Assalomu alaykum, {user_name}!\n\n"
         f"Tabriklaymiz! Siz Qur'on yodlash yo'lida muhim qadam qo'ydingiz!\n\n"
         f"🌟 Alloh taolo sizga bu yo'lda baraka va sobitqadamlik ato etsin!\n\n"
-        f"──────────────────\n"
         f"📌 BOT QANDAY ISHLAYDI:\n\n"
         f"📗 YODLASH — Oyatlarni ilmiy usulda yodlash\n"
         f"   • Juz yoki surani tanlaysiz\n"
         f"   • Avval audio eshitasiz, so'ng 3→7→11 marta takrorlab yodlaysiz\n"
         f"   • Yangi oyat qo'shilganda avvalgisi bilan jamlanadi\n\n"
         f"📊 SAHIFAM — Shaxsiy statistikangiz\n"
-        f"   • Yodlagan oyatlaringiz, takrorlar, vaqt\n"
-        f"   • Himmat ballari va progress bar\n\n"
+        f"   • Yodlagan oyatlaringiz, takrorlar, streak\n\n"
         f"🎧 TINGLASH — Mashhur qorilar tilovati\n\n"
         f"🏆 REYTING — Top 50 foydalanuvchi\n\n"
-        f"💎 PREMIUM — Kuniga 5 oyat BEPUL | Premium: limitsiz\n"
-        f"──────────────────\n\n"
-        f"3 kunlik BEPUL Premium faollashtirildi! 🎁"
+        f"⚙️ SOZLAMALAR — Eslatmalar, til, do'st taklif\n\n"
+        f"💎 PREMIUM — Kuniga 5 oyat BEPUL | Premium: limitsiz\n\n"
+        f"1 kunlik BEPUL Premium faollashtirildi! 🎁"
     )
 
 
@@ -77,22 +75,16 @@ def referral_bonus_message(new_user_name: str, total_points: int) -> str:
 def ayah_header(surah_name: str, surah_number: int,
                 ayah_number: int, total_ayahs: int) -> str:
     return (
-        f"──────────────────\n"
         f"📖 {surah_name.upper()} SURASI | {surah_number}-sura\n"
-        f"🔢 {ayah_number}-oyat / {total_ayahs} oyat\n"
-        f"──────────────────"
+        f"🔢 {ayah_number}-oyat / {total_ayahs} oyat"
     )
 
 
 def ayah_text_message(arabic: str, uzbek: str, instruction: str, count: int) -> str:
     return (
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"{arabic}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{arabic}\n\n"
         f"📝 {uzbek}\n\n"
-        f"──────────────────────\n"
-        f"{instruction}\n"
-        f"──────────────────────"
+        f"{instruction}"
     )
 
 
@@ -108,24 +100,34 @@ def rep_instruction(count: int) -> str:
 
 def accumulation_message(ayahs: list) -> str:
     n = len(ayahs)
-    lines = [
-        "──────────────────",
-        f"🔗 {n} OYATNI BIRGA TAKRORLANG",
-        "──────────────────\n"
-    ]
+    lines = [f"🔗 {n} OYATNI BIRGA TAKRORLANG\n"]
     for i, a in enumerate(ayahs, 1):
         lines.append(f"{i}. {a['arabic']}\n")
-    lines.append("──────────────────")
     lines.append(f"🔄 Barcha {n} oyatni birga 5 marotaba o'qing")
-    lines.append("──────────────────")
     return "\n".join(lines)
 
 
 def checkpoint_message(count: int) -> str:
+    return f"✨ Ajoyib! {count} oyat yodladingiz!"
+
+
+def ayah_progress_message(surah_name: str, completed: int, total: int) -> str:
+    pct = int(completed / total * 100) if total else 0
+    bar_filled = int(pct / 5)
+    bar = "▓" * bar_filled + "░" * (20 - bar_filled)
+    encouragements = [
+        "Ma sha ALLOH, davom eting! 🌟",
+        "Alloh qabul qilsin! Davom eting! 🤲",
+        "Zo'r ketayapsiz! 💪",
+        "Ajoyib! Alloh baraka bersin! ✨",
+        "Muvaffaqiyatlar! Davom eting! 🌙",
+    ]
+    import random
+    enc = random.choice(encouragements)
     return (
-        f"──────────────────\n"
-        f"✨ Ajoyib! {count} oyat yodladingiz!\n"
-        f"──────────────────"
+        f"📊 {surah_name} surasi: {pct}% yodlandi\n"
+        f"[{bar}] {completed}/{total}\n\n"
+        f"{enc}"
     )
 
 
@@ -300,11 +302,23 @@ def premium_trial_offer() -> str:
 
 def premium_approved_message(expiry_str: str) -> str:
     return (
-        f"🎉 TABRIKLAYMIZ!\n\n"
-        f"💎 Premium muvaffaqiyatli faollashtirildi!\n"
-        f"📅 Tugash sanasi: {expiry_str}\n"
-        f"♾️ Kunlik limit: Limitsiz oyat\n\n"
-        f"Davom etaylik! 💪"
+        f"🎉🎊 TABRIKLAYMIZ! PREMIUM FAOLLASHTIRILDI!\n\n"
+        f"💎 Siz endi Quron Yodlaymiz Premium a'zosisiz!\n"
+        f"📅 Amal qilish muddati: {expiry_str} gacha\n\n"
+        f"🔓 SIZGA OCHILGAN IMKONIYATLAR:\n"
+        f"♾️ Kunlik limit — LIMITSIZ oyat (oldin 5 oyat)\n"
+        f"🎵 Barcha qorilar — 5 ta premium qori ochildi\n"
+        f"📊 To'liq statistika va progress\n"
+        f"🏆 Reyting — top o'rinlar uchun kurash\n\n"
+        f"📈 Premium foydalanuvchilar oddiy foydalanuvchilarga "
+        f"qaraganda 10-15 barobar tezroq Qur'on yodlay oladi!\n\n"
+        f"💡 Eslatma: Premium sizga imkoniyat bilan birga "
+        f"mas'uliyat ham yuklaydi — har kuni muntazam yodlang!\n\n"
+        f"🌟 Siz bu to'lov orqali imkoniyati bo'lmagan "
+        f"foydalanuvchilar uchun bepul Qur'on yodlash imkoniyatlarini "
+        f"kengaytirishga va loyihani rivojlantirishga hissa qo'shdingiz. "
+        f"Alloh sizdan rozi bo'lsin! 🤲\n\n"
+        f"Bismillah, davom etaylik! 💪🌙"
     )
 
 

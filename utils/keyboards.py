@@ -12,10 +12,10 @@ from config import RECITERS
 def main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            ["📗 Yodlash",  "📊 Sahifam"],
-            ["🎧 Tinglash", "🏆 Reyting"],
-            ["💎 Premium",  "👥 Do'st taklif"],
-            ["📞 Murojaat"],
+            ["📗 Yodlash"],
+            ["📊 Sahifam",   "🏆 Reyting"],
+            ["🎧 Tinglash",  "💎 Premium"],
+            ["⚙️ Sozlamalar", "📞 Murojaat"],
         ],
         resize_keyboard=True,
     )
@@ -313,3 +313,106 @@ def contact_reply_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("↩️ Javob qaytarish", callback_data=f"contact_reply_{user_id}"),
     ]])
+
+
+# ─── Admin Ayah Photo Inline Picker ───────────────────────────────────────────
+
+def admin_surah_select_keyboard(page: int = 0) -> InlineKeyboardMarkup:
+    """Show 10 surahs per page for admin to pick."""
+    from utils.helpers import load_surahs
+    surahs = load_surahs()
+    page_size = 10
+    total = len(surahs)
+    start = page * page_size
+    end = min(start + page_size, total)
+
+    buttons = []
+    row = []
+    for s in surahs[start:end]:
+        btn = InlineKeyboardButton(
+            f"{s['number']}. {s['name']}",
+            callback_data=f"aphoto_s_{s['number']}"
+        )
+        row.append(btn)
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    # Pagination
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"aphoto_sp_{page-1}"))
+    nav.append(InlineKeyboardButton(f"{page+1}/{(total-1)//page_size+1}", callback_data="noop"))
+    if end < total:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"aphoto_sp_{page+1}"))
+    if nav:
+        buttons.append(nav)
+
+    buttons.append([InlineKeyboardButton("❌ Bekor qilish", callback_data="admin_back")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def admin_ayah_select_keyboard(surah_num: int, ayah_count: int, page: int = 0) -> InlineKeyboardMarkup:
+    """Show ayah numbers for selected surah."""
+    page_size = 20
+    start = page * page_size + 1
+    end = min(start + page_size - 1, ayah_count)
+
+    buttons = []
+    row = []
+    for n in range(start, end + 1):
+        row.append(InlineKeyboardButton(str(n), callback_data=f"aphoto_a_{n}"))
+        if len(row) == 5:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"aphoto_ap_{surah_num}_{page-1}"))
+    if end < ayah_count:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"aphoto_ap_{surah_num}_{page+1}"))
+    if nav:
+        buttons.append(nav)
+
+    buttons.append([InlineKeyboardButton("🔙 Suraga qaytish", callback_data="aphoto_back_surah")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def admin_photo_next_keyboard(surah_num: int, surah_name: str, next_ayah: int, total_ayahs: int) -> InlineKeyboardMarkup:
+    """After upload: show 'next ayah' button for sequential uploads."""
+    buttons = []
+    if next_ayah <= total_ayahs:
+        buttons.append([InlineKeyboardButton(
+            f"➡️ {surah_name} {next_ayah}-oyatni yuklash",
+            callback_data=f"aphoto_nx_{surah_num}_{next_ayah}"
+        )])
+    buttons.append([InlineKeyboardButton("🔙 Admin panel", callback_data="admin_back")])
+    return InlineKeyboardMarkup(buttons)
+
+
+# ─── Settings ─────────────────────────────────────────────────────────────────
+
+def settings_keyboard(notif_enabled: bool = True, notif_count: int = 1) -> InlineKeyboardMarkup:
+    notif_label = ("🔔 Eslatmalar: Yoq" if notif_enabled else "🔕 Eslatmalar: O'ch")
+    count_label = f"🔢 Kunlik: {notif_count}x"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(notif_label,  callback_data="settings_notif_toggle")],
+        [InlineKeyboardButton(count_label,  callback_data="settings_notif_count")],
+        [InlineKeyboardButton("👥 Do'st taklif", callback_data="settings_referral")],
+        [InlineKeyboardButton("🌐 Til: O'zbek (lotin)", callback_data="settings_lang")],
+    ])
+
+
+def settings_notif_count_keyboard(active: int = 1) -> InlineKeyboardMarkup:
+    row = [
+        InlineKeyboardButton(f"[{i}x]" if i == active else f"{i}x", callback_data=f"settings_nc_{i}")
+        for i in range(1, 6)
+    ]
+    return InlineKeyboardMarkup([
+        row,
+        [InlineKeyboardButton("↩️ Orqaga", callback_data="settings_back")],
+    ])

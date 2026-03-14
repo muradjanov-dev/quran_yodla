@@ -12,6 +12,7 @@ from telegram.ext import (
 from config import (
     ADMIN_ID, ADMIN_BROADCAST, ADMIN_USER_SEARCH, ADMIN_REJECT_REASON,
     ADMIN_AYAH_PHOTO_SURAH, ADMIN_AYAH_PHOTO_AYAH, ADMIN_AYAH_PHOTO_UPLOAD,
+    ADMIN_AYAH_PHOTO_SURAH_SELECT, ADMIN_AYAH_PHOTO_AYAH_SELECT,
     ADMIN_NOTIF_TIME, ADMIN_NOTIF_COUNT,
 )
 from services.firebase_service import (
@@ -25,7 +26,8 @@ from services.stats_service import get_bot_wide_stats
 from services.premium_service import activate_premium, deactivate_premium
 from utils.keyboards import (
     admin_main_keyboard, admin_user_actions_keyboard, broadcast_confirm_keyboard,
-    admin_notif_count_keyboard,
+    admin_notif_count_keyboard, admin_surah_select_keyboard,
+    admin_ayah_select_keyboard, admin_photo_next_keyboard,
 )
 from utils.messages import (
     admin_menu_message, admin_user_info_message,
@@ -36,8 +38,17 @@ logger = logging.getLogger(__name__)
 
 
 def _admin_keyboard():
-    stats = get_bot_wide_stats()
-    hour, minute, count = get_notification_settings()
+    try:
+        stats = get_bot_wide_stats()
+    except Exception as e:
+        logger.error(f"get_bot_wide_stats error: {e}")
+        stats = {"total_users": 0, "premium_users": 0, "new_today": 0,
+                 "active_today": 0, "active_7d": 0, "pending_premium": 0}
+    try:
+        hour, minute, count = get_notification_settings()
+    except Exception as e:
+        logger.error(f"get_notification_settings error: {e}")
+        hour, minute, count = 8, 0, 1
     return admin_menu_message(stats), admin_main_keyboard(
         pending_count=stats.get("pending_premium", 0),
         notif_time=f"{hour:02d}:{minute:02d}",
@@ -77,6 +88,10 @@ async def admin_user_mgmt_callback(update: Update, context: ContextTypes.DEFAULT
     await query.answer()
     await query.message.reply_text("👤 USER ID yoki @username kiriting:")
     return ADMIN_USER_SEARCH
+
+
+_MENU_BUTTONS = {"📊 Sahifam", "📗 Yodlash", "🎧 Tinglash", "🏆 Reyting",
+                 "💎 Premium", "📞 Murojaat", "⚙️ Sozlamalar"}
 
 
 async def admin_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -250,23 +265,24 @@ async def admin_reject_reason(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def admin_all_users_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show all users with name + profile link, paginated 20 per page."""
+    """Show all users paginated 15 per page; tap a user number to see their detail."""
     query = update.callback_query
     if query.from_user.id != ADMIN_ID:
         await query.answer(); return
     await query.answer()
 
-    # Parse page number from callback_data: "admin_users_0", "admin_users_1" ...
     parts = query.data.split("_")
     page: int = int(parts[-1]) if parts[-1].isdigit() else 0
 
     users     = get_all_users()
-    page_size = 20
+    page_size = 15
     total     = len(users)
     start     = page * page_size
     end       = min(start + page_size, total)
 
     lines = [f"👥 FOYDALANUVCHILAR ({start+1}–{end} / {total} ta)\n"]
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    user_buttons = []
     for i, u in enumerate(users[start:end], start + 1):
         uid      = u.get("telegram_id", 0)
         name     = (u.get("full_name") or "Anonim")[:16]
@@ -274,29 +290,53 @@ async def admin_all_users_callback(update: Update, context: ContextTypes.DEFAULT
         stats    = u.get("stats", {})
         verses   = stats.get("total_verses_read", 0)
         himmat   = stats.get("himmat_points", 0)
-        mins     = stats.get("total_minutes", 0)
-        streak   = stats.get("current_streak_days", 0)
         prem     = "💎" if u.get("premium", {}).get("is_active") else ""
-        lines.append(
-            f"{i}. {name}{prem} | {username} | ID: {uid}\n"
-            f"   📖{verses} 💫{himmat:,} ⏱{mins}d 🔥{streak}"
-        )
+        lines.append(f"{i}. {prem}{name} | {username} | 📖{verses} 💫{himmat:,}")
+        user_buttons.append(InlineKeyboardButton(
+            f"{i}. {name[:12]}{prem}",
+            callback_data=f"admin_udetail_{uid}"
+        ))
 
     text = "\n".join(lines)
 
-    # Pagination buttons
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    row = []
-    if page > 0:
-        row.append(InlineKeyboardButton("⬅️ Oldingi", callback_data="admin_users_{}".format(page - 1)))
-    if end < total:
-        row.append(InlineKeyboardButton("Keyingi ➡️", callback_data="admin_users_{}".format(page + 1)))
-    keyboard = InlineKeyboardMarkup([row]) if row else None
+    # Build keyboard: user buttons 2 per row + pagination
+    buttons = []
+    for j in range(0, len(user_buttons), 2):
+        buttons.append(user_buttons[j:j+2])
 
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"admin_users_{page-1}"))
+    if end < total:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"admin_users_{page+1}"))
+    if nav:
+        buttons.append(nav)
+    buttons.append([InlineKeyboardButton("↩️ Orqaga", callback_data="admin_back")])
+    keyboard = InlineKeyboardMarkup(buttons)
+
+    await query.message.reply_text(text, reply_markup=keyboard, disable_web_page_preview=True)
+
+
+async def admin_user_detail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show full detail for a specific user."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    uid = int(query.data.split("_")[-1])
+    db_user = get_user(uid)
+    if not db_user:
+        await query.message.reply_text("❌ Foydalanuvchi topilmadi.")
+        return
+    # Referral stats
+    stats = db_user.get("stats", {})
+    ref_count = db_user.get("referral_count", 0)
+    from utils.messages import admin_user_info_message
+    text = admin_user_info_message(db_user)
+    text += f"\n👥 Taklif qilganlar: {ref_count} kishi"
     await query.message.reply_text(
         text,
-        reply_markup          = keyboard,
-        disable_web_page_preview = True,
+        reply_markup=admin_user_actions_keyboard(uid)
     )
 
 
@@ -318,36 +358,106 @@ async def admin_ayah_photo_init(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer(); return
     await query.answer()
     await query.message.reply_text(
-        "🖼 OYATGA RASM QO'SHISH\n\n"
-        "1️⃣ Avval sura raqamini yuboring (masalan: 1):"
+        "🖼 OYATGA RASM QO'SHISH\n\nSurani tanlang:",
+        reply_markup=admin_surah_select_keyboard(page=0)
     )
-    return ADMIN_AYAH_PHOTO_SURAH
+    return ADMIN_AYAH_PHOTO_SURAH_SELECT
 
 
-async def admin_ayah_photo_surah(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    text = update.message.text.strip()
-    if not text.isdigit() or not (1 <= int(text) <= 114):
-        await update.message.reply_text("❌ 1 dan 114 gacha raqam kiriting:")
-        return ADMIN_AYAH_PHOTO_SURAH
-    context.user_data["ayah_photo_surah"] = int(text)
-    await update.message.reply_text(f"✅ Sura: {text}\n\n2️⃣ Oyat raqamini yuboring:")
-    return ADMIN_AYAH_PHOTO_AYAH
+async def admin_ayah_photo_surah_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Navigate to different surah page."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    page = int(query.data.split("_")[-1])
+    try:
+        await query.message.edit_reply_markup(reply_markup=admin_surah_select_keyboard(page=page))
+    except Exception:
+        await query.message.reply_text("Surani tanlang:", reply_markup=admin_surah_select_keyboard(page=page))
+    return ADMIN_AYAH_PHOTO_SURAH_SELECT
 
 
-async def admin_ayah_photo_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        return
-    text = update.message.text.strip()
-    if not text.isdigit() or int(text) < 1:
-        await update.message.reply_text("❌ To'g'ri oyat raqami kiriting:")
-        return ADMIN_AYAH_PHOTO_AYAH
-    context.user_data["ayah_photo_ayah"] = int(text)
-    surah = context.user_data["ayah_photo_surah"]
-    await update.message.reply_text(
-        f"✅ Sura {surah}, oyat {text}\n\n3️⃣ Endi rasmni yuboring:"
-    )
+async def admin_ayah_photo_surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin clicked a surah button."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    surah_num = int(query.data.split("_")[-1])
+    from utils.helpers import get_surah_by_number
+    surah_info = get_surah_by_number(surah_num)
+    if not surah_info:
+        await query.message.reply_text("Sura topilmadi."); return ADMIN_AYAH_PHOTO_SURAH_SELECT
+    context.user_data["ayah_photo_surah"] = surah_num
+    context.user_data["ayah_photo_surah_name"] = surah_info["name"]
+    context.user_data["ayah_photo_total"] = surah_info["ayah_count"]
+    try:
+        await query.message.edit_text(
+            f"✅ {surah_info['name']} ({surah_num}-sura, {surah_info['ayah_count']} oyat)\n\nOyat raqamini tanlang:",
+            reply_markup=admin_ayah_select_keyboard(surah_num, surah_info["ayah_count"], page=0)
+        )
+    except Exception:
+        await query.message.reply_text(
+            f"✅ {surah_info['name']}\nOyat raqamini tanlang:",
+            reply_markup=admin_ayah_select_keyboard(surah_num, surah_info["ayah_count"], page=0)
+        )
+    return ADMIN_AYAH_PHOTO_AYAH_SELECT
+
+
+async def admin_ayah_photo_ayah_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Navigate to different ayah page."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    parts = query.data.split("_")   # aphoto_ap_{surah}_{page}
+    surah_num = int(parts[-2])
+    page = int(parts[-1])
+    from utils.helpers import get_surah_by_number
+    surah_info = get_surah_by_number(surah_num)
+    ayah_count = surah_info["ayah_count"] if surah_info else 286
+    try:
+        await query.message.edit_reply_markup(
+            reply_markup=admin_ayah_select_keyboard(surah_num, ayah_count, page=page)
+        )
+    except Exception:
+        pass
+    return ADMIN_AYAH_PHOTO_AYAH_SELECT
+
+
+async def admin_ayah_photo_back_surah(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Go back to surah selection."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    try:
+        await query.message.edit_text(
+            "🖼 OYATGA RASM QO'SHISH\n\nSurani tanlang:",
+            reply_markup=admin_surah_select_keyboard(page=0)
+        )
+    except Exception:
+        await query.message.reply_text("Surani tanlang:", reply_markup=admin_surah_select_keyboard(page=0))
+    return ADMIN_AYAH_PHOTO_SURAH_SELECT
+
+
+async def admin_ayah_photo_ayah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin clicked an ayah button."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    ayah_num = int(query.data.split("_")[-1])
+    context.user_data["ayah_photo_ayah"] = ayah_num
+    surah_num  = context.user_data.get("ayah_photo_surah", 1)
+    surah_name = context.user_data.get("ayah_photo_surah_name", "")
+    try:
+        await query.message.edit_text(
+            f"✅ {surah_name} — {ayah_num}-oyat\n\n📸 Endi rasmni yuboring:"
+        )
+    except Exception:
+        await query.message.reply_text(f"✅ {surah_name} — {ayah_num}-oyat\n\n📸 Endi rasmni yuboring:")
     return ADMIN_AYAH_PHOTO_UPLOAD
 
 
@@ -357,15 +467,67 @@ async def admin_ayah_photo_upload(update: Update, context: ContextTypes.DEFAULT_
     if not update.message.photo:
         await update.message.reply_text("❌ Iltimos, rasm yuboring (foto sifatida):")
         return ADMIN_AYAH_PHOTO_UPLOAD
-    surah   = context.user_data.pop("ayah_photo_surah", None)
-    ayah    = context.user_data.pop("ayah_photo_ayah", None)
-    file_id = update.message.photo[-1].file_id
+    surah      = context.user_data.pop("ayah_photo_surah", None)
+    ayah       = context.user_data.pop("ayah_photo_ayah", None)
+    surah_name = context.user_data.pop("ayah_photo_surah_name", "")
+    total      = context.user_data.pop("ayah_photo_total", 286)
+    file_id    = update.message.photo[-1].file_id
     set_ayah_photo(surah, ayah, file_id, ADMIN_ID)
     await update.message.reply_text(
-        f"✅ Sura {surah}, {ayah}-oyatga rasm saqlandi!\n"
-        f"Endi foydalanuvchilar bu oyatni yodlaganda rasm ko'rsatiladi."
+        f"✅ {surah_name} {ayah}-oyatga rasm saqlandi!",
+        reply_markup=admin_photo_next_keyboard(surah, surah_name, ayah + 1, total)
     )
     return ConversationHandler.END
+
+
+async def admin_ayah_photo_next(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin taps 'next ayah' button after upload — jump straight to photo upload state."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    parts = query.data.split("_")   # aphoto_nx_{surah}_{ayah}
+    surah_num = int(parts[-2])
+    ayah_num  = int(parts[-1])
+    from utils.helpers import get_surah_by_number
+    surah_info = get_surah_by_number(surah_num)
+    surah_name = surah_info["name"] if surah_info else ""
+    total      = surah_info["ayah_count"] if surah_info else 286
+    context.user_data["ayah_photo_surah"] = surah_num
+    context.user_data["ayah_photo_ayah"]  = ayah_num
+    context.user_data["ayah_photo_surah_name"] = surah_name
+    context.user_data["ayah_photo_total"] = total
+    await query.message.reply_text(
+        f"📸 {surah_name} — {ayah_num}-oyat rasmini yuboring:"
+    )
+    return ADMIN_AYAH_PHOTO_UPLOAD
+
+
+# ─── Old text-based ayah photo helpers (kept as fallback stubs) ───────────────
+
+async def admin_ayah_photo_surah(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Legacy text handler — exits conversation if non-numeric (e.g. menu button press)."""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    text = update.message.text.strip()
+    if not text.isdigit() or not (1 <= int(text) <= 114):
+        return ConversationHandler.END   # exit on menu buttons / invalid input
+    context.user_data["ayah_photo_surah"] = int(text)
+    await update.message.reply_text(f"✅ Sura: {text}\n\n2️⃣ Oyat raqamini yuboring:")
+    return ADMIN_AYAH_PHOTO_AYAH
+
+
+async def admin_ayah_photo_ayah(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Legacy text handler."""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    text = update.message.text.strip()
+    if not text.isdigit() or int(text) < 1:
+        return ConversationHandler.END
+    context.user_data["ayah_photo_ayah"] = int(text)
+    surah = context.user_data["ayah_photo_surah"]
+    await update.message.reply_text(f"✅ Sura {surah}, oyat {text}\n\n3️⃣ Endi rasmni yuboring:")
+    return ADMIN_AYAH_PHOTO_UPLOAD
 
 
 async def admin_ayah_photo_delete_init(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -493,8 +655,11 @@ def _parse_times(text: str) -> list:
 async def admin_notif_time_set(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
+    raw = update.message.text.strip()
+    if raw in _MENU_BUTTONS:
+        return ConversationHandler.END
     _, _, count = get_notification_settings()
-    times = _parse_times(update.message.text.strip())
+    times = _parse_times(raw)
 
     if not times:
         await update.message.reply_text(
@@ -555,22 +720,25 @@ def build_admin_handler() -> ConversationHandler:
             CallbackQueryHandler(admin_ayah_photo_init,    pattern="^admin_ayah_photo$"),
             CallbackQueryHandler(admin_notif_time_init,    pattern="^admin_notif_time$"),
             CallbackQueryHandler(admin_notif_count_init,   pattern="^admin_notif_count$"),
-            # Premium reject — admin clicks Rad etish on receipt photo
             CallbackQueryHandler(admin_reject_init,        pattern="^admin_reject_"),
+            CallbackQueryHandler(admin_ayah_photo_next,    pattern="^aphoto_nx_"),
         ],
         states={
             ADMIN_USER_SEARCH: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_user_search),
             ],
-            ADMIN_AYAH_PHOTO_SURAH: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ayah_photo_surah),
+            ADMIN_AYAH_PHOTO_SURAH_SELECT: [
+                CallbackQueryHandler(admin_ayah_photo_surah_selected, pattern="^aphoto_s_"),
+                CallbackQueryHandler(admin_ayah_photo_surah_page,     pattern="^aphoto_sp_"),
             ],
-            ADMIN_AYAH_PHOTO_AYAH: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ayah_photo_ayah),
+            ADMIN_AYAH_PHOTO_AYAH_SELECT: [
+                CallbackQueryHandler(admin_ayah_photo_ayah_selected, pattern="^aphoto_a_"),
+                CallbackQueryHandler(admin_ayah_photo_ayah_page,     pattern="^aphoto_ap_"),
+                CallbackQueryHandler(admin_ayah_photo_back_surah,    pattern="^aphoto_back_surah$"),
             ],
             ADMIN_AYAH_PHOTO_UPLOAD: [
                 MessageHandler(filters.PHOTO, admin_ayah_photo_upload),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_ayah_photo_upload),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, lambda u, c: ADMIN_AYAH_PHOTO_UPLOAD),
             ],
             ADMIN_NOTIF_TIME: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_notif_time_set),
@@ -582,7 +750,10 @@ def build_admin_handler() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_reject_reason),
             ],
         },
-        fallbacks=[CommandHandler("start", lambda u, c: ConversationHandler.END)],
+        fallbacks=[
+            CommandHandler("start", lambda u, c: ConversationHandler.END),
+            CallbackQueryHandler(admin_back_callback, pattern="^admin_back$"),
+        ],
         allow_reentry=True,
         name="admin",
         per_message=False,
@@ -632,9 +803,10 @@ async def _admin_message_interceptor(update: Update, context: ContextTypes.DEFAU
 
 
 def register_admin_callbacks(app):
-    # Users list with pagination
-    app.add_handler(CallbackQueryHandler(admin_all_users_callback, pattern="^admin_users_"))
-    # Broadcast: flag → group=-1 intercept → confirmation buttons → send
+    # Users list with pagination + user detail
+    app.add_handler(CallbackQueryHandler(admin_all_users_callback,  pattern="^admin_users_"))
+    app.add_handler(CallbackQueryHandler(admin_user_detail_callback, pattern="^admin_udetail_"))
+    # Broadcast
     app.add_handler(CallbackQueryHandler(admin_broadcast_init,    pattern="^admin_broadcast$"))
     app.add_handler(CallbackQueryHandler(admin_broadcast_confirm, pattern="^broadcast_confirm$"))
     app.add_handler(CallbackQueryHandler(admin_broadcast_cancel,  pattern="^broadcast_cancel$"))

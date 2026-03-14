@@ -114,7 +114,7 @@ def checkpoint_message(count: int) -> str:
 def ayah_progress_message(surah_name: str, completed: int, total: int) -> str:
     pct = int(completed / total * 100) if total else 0
     bar_filled = int(pct / 5)
-    bar = "▓" * bar_filled + "░" * (20 - bar_filled)
+    bar = "🟩" * bar_filled + "⬜" * (20 - bar_filled)
     encouragements = [
         "Ma sha ALLOH, davom eting! 🌟",
         "Alloh qabul qilsin! Davom eting! 🤲",

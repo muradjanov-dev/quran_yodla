@@ -190,8 +190,9 @@ def apply_streak_update(user_id: int) -> Tuple[int, bool, Optional[int]]:
     try:
         if db:
             db.collection("users").document(str(user_id)).update({
-                "stats.current_streak_days": new_streak,
-                "stats.longest_streak_days": new_longest,
+                "stats.current_streak_days":  new_streak,
+                "stats.longest_streak_days":  new_longest,
+                "stats.last_activity_date":   datetime.now(TZ),
             })
     except Exception as e:
         logger.error(f"apply_streak_update Firebase error: {e}")

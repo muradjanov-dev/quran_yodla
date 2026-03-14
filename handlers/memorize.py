@@ -423,11 +423,15 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     add_activity_to_period_safe(user_id, 1, 3+7+11, 5, points_for_repetition(11), [session.get("surah_name", "")])
 
-    new_streak, streak_broken, streak_bonus = apply_streak_update(user_id)
-    if streak_bonus:
-        await context.bot.send_message(chat_id, f"🔥 {new_streak}-kunlik streak! +{streak_bonus} Himmat ball!")
-    elif new_streak > 1 and not streak_broken:
-        await context.bot.send_message(chat_id, f"🔥 Streak: {new_streak} kun davomida!")
+    from datetime import date as _date
+    _today_key = f"_streak_updated_{_date.today().isoformat()}"
+    if not context.user_data.get(_today_key):
+        context.user_data[_today_key] = True
+        new_streak, streak_broken, streak_bonus = apply_streak_update(user_id)
+        if streak_bonus:
+            await context.bot.send_message(chat_id, f"🔥 {new_streak}-kunlik streak! +{streak_bonus} Himmat ball!")
+        elif new_streak > 1 and not streak_broken:
+            await context.bot.send_message(chat_id, f"🔥 Streak: {new_streak} kun davomida!")
     if first_ayah_bonus:
         await context.bot.send_message(chat_id, f"🌟 BIRINCHI OYAT! +25 Himmat ball! Tabriklaymiz!")
 

@@ -132,7 +132,7 @@ def _xatm_view_text(xatm: dict, juzs: list, user_id: int) -> str:
         "🟡 = sizniki (o'qilmagan)   ✅ = o'qildi",
         "🔒 = band   · raqam = bo'sh",
         "",
-        "Juz tugmasi: bir marta bosing — o'qildim ✅",
+        "Juz tugmasi: bir marta bosing — o'qib bo'ldim ✅",
         "Yana bosing — bekor qilish (🟡 ga qaytadi)",
     ]
     return "\n".join(lines)

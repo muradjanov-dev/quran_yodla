@@ -668,10 +668,10 @@ def get_all_users() -> list:
 
 # ─── JAMOAVIY XATM ────────────────────────────────────────────────────────────
 
-def get_or_create_recruiting_xatm() -> str:
-    """Returns the ID of an existing 'recruiting' xatm, or creates a new one."""
+def get_or_create_recruiting_xatm() -> Optional[str]:
+    """Returns the ID of an existing 'recruiting' xatm, or None if none exist."""
     if not db:
-        return "offline"
+        return None
     try:
         docs = (
             db.collection("group_xatms")
@@ -683,21 +683,34 @@ def get_or_create_recruiting_xatm() -> str:
             return doc.id
     except Exception as e:
         logger.error(f"get_or_create_recruiting_xatm query error: {e}")
+    return None
 
-    return create_xatm()
+
+def get_xatm_count() -> int:
+    """Returns total number of xatms ever created (for auto-numbering)."""
+    if not db:
+        return 0
+    try:
+        docs = list(db.collection("group_xatms").stream())
+        return len(docs)
+    except Exception as e:
+        logger.error(f"get_xatm_count error: {e}")
+        return 0
 
 
 def create_xatm(creator_id: int = None) -> str:
-    """Creates a new group xatm and returns its ID."""
+    """Creates a new numbered group xatm and returns its ID."""
     if not db:
         return "offline"
     try:
+        xatm_number = get_xatm_count() + 1
         ref = db.collection("group_xatms").document()
         ref.set({
-            "xatm_id":    ref.id,
-            "status":     "recruiting",
-            "creator_id": creator_id,
-            "created_at": _now(),
+            "xatm_id":     ref.id,
+            "xatm_number": xatm_number,
+            "status":      "recruiting",
+            "creator_id":  creator_id,
+            "created_at":  _now(),
         })
         return ref.id
     except Exception as e:
@@ -838,3 +851,40 @@ def get_xatm_stats() -> dict:
     except Exception as e:
         logger.error(f"get_xatm_stats error: {e}")
         return {}
+
+
+def get_xatm_ranking(xatm_id: str) -> list:
+    """Returns per-user ranking for a xatm sorted by completed juzs then speed."""
+    if not db:
+        return []
+    try:
+        juzs = get_xatm_juzs(xatm_id)
+        by_user: dict = {}
+        for j in juzs:
+            uid = j["user_id"]
+            by_user.setdefault(uid, []).append(j)
+
+        ranking = []
+        for uid, user_juzs in by_user.items():
+            user = get_user(uid)
+            name = user.get("full_name", str(uid)) if user else str(uid)
+            completed = [j for j in user_juzs if j["status"] == "completed"]
+            total_secs = 0
+            for j in completed:
+                assigned  = j.get("assigned_at")
+                done      = j.get("completed_at")
+                if assigned and done:
+                    total_secs += int((done - assigned).total_seconds())
+            ranking.append({
+                "user_id":      uid,
+                "name":         name,
+                "completed":    len(completed),
+                "total":        len(user_juzs),
+                "total_seconds": total_secs,
+            })
+
+        ranking.sort(key=lambda x: (-x["completed"], x["total_seconds"]))
+        return ranking
+    except Exception as e:
+        logger.error(f"get_xatm_ranking error: {e}")
+        return []

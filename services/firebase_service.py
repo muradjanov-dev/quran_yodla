@@ -888,3 +888,71 @@ def get_xatm_ranking(xatm_id: str) -> list:
     except Exception as e:
         logger.error(f"get_xatm_ranking error: {e}")
         return []
+
+
+def unassign_xatm_juz(xatm_id: str, juz_number: int, user_id: int):
+    """Removes a juz assignment (only if owned by user and not completed)."""
+    if not db:
+        return
+    doc_id = f"{xatm_id}_{juz_number}"
+    try:
+        snap = db.collection("group_xatm_juzs").document(doc_id).get()
+        if snap.exists:
+            data = snap.to_dict()
+            if data.get("user_id") == user_id and data.get("status") != "completed":
+                db.collection("group_xatm_juzs").document(doc_id).delete()
+    except Exception as e:
+        logger.error(f"unassign_xatm_juz error: {e}")
+
+
+def uncomplete_xatm_juz(xatm_id: str, juz_number: int, user_id: int):
+    """Reverts a completed juz back to assigned status."""
+    if not db:
+        return
+    doc_id = f"{xatm_id}_{juz_number}"
+    try:
+        snap = db.collection("group_xatm_juzs").document(doc_id).get()
+        if snap.exists and snap.to_dict().get("user_id") == user_id:
+            db.collection("group_xatm_juzs").document(doc_id).update({
+                "status":       "assigned",
+                "completed_at": None,
+            })
+            # Revert xatm status from completed back to active if needed
+            xatm = get_xatm(xatm_id)
+            if xatm and xatm.get("status") == "completed":
+                db.collection("group_xatms").document(xatm_id).update({
+                    "status": "active",
+                    "completed_at": None,
+                })
+    except Exception as e:
+        logger.error(f"uncomplete_xatm_juz error: {e}")
+
+
+def get_user_xatms(user_id: int) -> list:
+    """Returns list of {xatm, juzs} dicts for all xatms the user participated in."""
+    if not db:
+        return []
+    try:
+        juz_docs = (
+            db.collection("group_xatm_juzs")
+            .where("user_id", "==", user_id)
+            .stream()
+        )
+        # Group by xatm_id
+        by_xatm: dict = {}
+        for doc in juz_docs:
+            j = doc.to_dict()
+            by_xatm.setdefault(j["xatm_id"], []).append(j)
+
+        result = []
+        for xatm_id, juzs in by_xatm.items():
+            xatm = get_xatm(xatm_id)
+            if xatm:
+                result.append({"xatm": xatm, "juzs": juzs})
+
+        # Sort by xatm_number
+        result.sort(key=lambda x: x["xatm"].get("xatm_number", 0))
+        return result
+    except Exception as e:
+        logger.error(f"get_user_xatms error: {e}")
+        return []

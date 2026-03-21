@@ -1,5 +1,12 @@
 """
 xatm.py — Jamoaviy Xatm (Group Quran Reading) handler.
+
+Juz states (from user's perspective):
+  unassigned  → plain number, clickable if recruiting
+  assigned    → 🟡 (mine, not done) — click to mark done OR unassign
+  completed   → ✅ (mine, done)     — click to undo (back to assigned)
+  taken       → 🔒 (someone else's assigned)
+  other done  → ✅ (someone else's completed)
 """
 import math
 import logging
@@ -10,8 +17,9 @@ from telegram.ext import ContextTypes, CallbackQueryHandler, MessageHandler, fil
 from services.firebase_service import (
     get_xatm_stats, get_or_create_recruiting_xatm, create_xatm,
     get_xatm, get_xatm_juzs, assign_xatm_juz, complete_xatm_juz,
-    check_and_update_xatm_status, get_xatm_count, get_user,
-    get_xatm_ranking,
+    unassign_xatm_juz, uncomplete_xatm_juz,
+    check_and_update_xatm_status, get_user,
+    get_xatm_ranking, get_user_xatms,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,22 +67,54 @@ def _dashboard_text(stats: dict) -> str:
     )
 
 
-def _dashboard_keyboard() -> InlineKeyboardMarkup:
+def _dashboard_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🤝 Xatmga Qo'shilish", callback_data="xatm:join")],
+        [InlineKeyboardButton("🤝 Xatmga Qo'shilish",  callback_data="xatm:join")],
+        [InlineKeyboardButton("📋 Mening Xatmlarim",   callback_data="xatm:myxatms")],
     ])
+
+
+# ─── My Xatms View ────────────────────────────────────────────────────────────
+
+def _my_xatms_text(xatms_info: list) -> str:
+    if not xatms_info:
+        return "📋 *Mening Xatmlarim*\n\nSiz hali hech bir xatmga qo'shilmagansiz."
+    lines = ["📋 *Mening Xatmlarim*\n"]
+    for info in xatms_info:
+        xatm   = info["xatm"]
+        juzs   = info["juzs"]
+        num    = xatm.get("xatm_number", "?")
+        status = _status_label(xatm["status"])
+        done   = sum(1 for j in juzs if j["status"] == "completed")
+        nums   = sorted(j["juz_number"] for j in juzs)
+        nums_s = ", ".join(map(str, nums)) if nums else "—"
+        lines.append(f"📖 *Xatm #{num}* — {status}")
+        lines.append(f"   Juzlar: {nums_s} ({done}/{len(juzs)} ✅)\n")
+    return "\n".join(lines)
+
+
+def _my_xatms_keyboard(xatms_info: list) -> InlineKeyboardMarkup:
+    rows = []
+    for info in xatms_info:
+        xatm = info["xatm"]
+        num  = xatm.get("xatm_number", "?")
+        xid  = xatm["xatm_id"]
+        rows.append([InlineKeyboardButton(
+            f"📖 Xatm #{num} →", callback_data=f"xatm:view:{xid}"
+        )])
+    rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="xatm:dashboard")])
+    return InlineKeyboardMarkup(rows)
 
 
 # ─── Xatm View ────────────────────────────────────────────────────────────────
 
 def _xatm_view_text(xatm: dict, juzs: list, user_id: int) -> str:
-    xatm_id     = xatm["xatm_id"]
-    status      = xatm["status"]
-    xatm_num    = xatm.get("xatm_number", "?")
-    total       = len(juzs)
-    completed   = sum(1 for j in juzs if j["status"] == "completed")
-    my_juzs     = [j for j in juzs if j["user_id"] == user_id]
-    my_done     = sum(1 for j in my_juzs if j["status"] == "completed")
+    status    = xatm["status"]
+    xatm_num  = xatm.get("xatm_number", "?")
+    total     = len(juzs)
+    completed = sum(1 for j in juzs if j["status"] == "completed")
+    my_juzs   = [j for j in juzs if j["user_id"] == user_id]
+    my_done   = sum(1 for j in my_juzs if j["status"] == "completed")
 
     lines = [
         f"📖 *Xatm #{xatm_num}*",
@@ -83,9 +123,18 @@ def _xatm_view_text(xatm: dict, juzs: list, user_id: int) -> str:
     ]
     if my_juzs:
         my_nums = sorted(j["juz_number"] for j in my_juzs)
-        lines.append(f"Sizning juzlaringiz: *{', '.join(map(str, my_nums))}* ({my_done}/{len(my_juzs)} ✅)")
-    lines.append("")
-    lines.append("Juzingizni tanlang 👇")
+        lines.append(
+            f"Sizning juzlaringiz: *{', '.join(map(str, my_nums))}* "
+            f"({my_done}/{len(my_juzs)} ✅)"
+        )
+    lines += [
+        "",
+        "🟡 = sizniki (o'qilmagan)   ✅ = o'qildi",
+        "🔒 = band   · raqam = bo'sh",
+        "",
+        "Juz tugmasi: bir marta bosing — o'qildim ✅",
+        "Yana bosing — bekor qilish (🟡 ga qaytadi)",
+    ]
     return "\n".join(lines)
 
 
@@ -105,22 +154,26 @@ def _xatm_keyboard(xatm: dict, juz_map: dict, user_id: int) -> InlineKeyboardMar
             if state:
                 if state["user_id"] == user_id:
                     if state["status"] == "completed":
+                        # Mine + done → ✅, click to undo
                         label   = f"{j_num}✅"
-                        cb_data = "xatm:void"
+                        cb_data = f"xatm:undone:{xatm_id}:{j_num}"
                     else:
-                        label   = f"{j_num}🟢"
-                        # Allow marking done at any time after assigning
+                        # Mine + assigned → 🟡, click to mark done
+                        label   = f"{j_num}🟡"
                         cb_data = f"xatm:done:{xatm_id}:{j_num}"
                 else:
-                    label = f"{j_num}✅" if state["status"] == "completed" else f"{j_num}🔒"
+                    # Someone else's
+                    label   = f"{j_num}✅" if state["status"] == "completed" else f"{j_num}🔒"
+                    cb_data = "xatm:void"
             else:
+                # Unassigned
                 if status == "recruiting":
                     cb_data = f"xatm:take:{xatm_id}:{j_num}"
 
             row.append(InlineKeyboardButton(label, callback_data=cb_data))
         rows.append(row)
 
-    # Bottom action buttons
+    # Action buttons
     deep_link = f"https://t.me/{BOT_USERNAME}?start=xatm_{xatm_id}"
     rows.append([
         InlineKeyboardButton("👥 Ishtirokchilar", callback_data=f"xatm:members:{xatm_id}"),
@@ -130,7 +183,6 @@ def _xatm_keyboard(xatm: dict, juz_map: dict, user_id: int) -> InlineKeyboardMar
         "🔗 Do'stlarga Ulashish",
         url=f"https://t.me/share/url?url={deep_link}&text=Jamoaviy+Xatmga+qo%27shiling%21"
     )])
-    # If all 30 juzs are taken, show button to start next xatm
     if len(juz_map) == 30:
         rows.append([InlineKeyboardButton(
             "➕ Keyingi Xatmni Boshlash", callback_data="xatm:join"
@@ -143,11 +195,9 @@ def _xatm_keyboard(xatm: dict, juz_map: dict, user_id: int) -> InlineKeyboardMar
 
 def _members_text(xatm: dict, juzs: list) -> str:
     xatm_num = xatm.get("xatm_number", "?")
-    # Group juzs by user
     by_user: dict = {}
     for j in juzs:
-        uid = j["user_id"]
-        by_user.setdefault(uid, []).append(j)
+        by_user.setdefault(j["user_id"], []).append(j)
 
     lines = [f"👥 *Xatm #{xatm_num} — Ishtirokchilar*\n"]
     if not by_user:
@@ -156,11 +206,10 @@ def _members_text(xatm: dict, juzs: list) -> str:
         for uid, user_juzs in sorted(by_user.items()):
             user = get_user(uid)
             name = user.get("full_name", str(uid)) if user else str(uid)
-            done  = sum(1 for j in user_juzs if j["status"] == "completed")
-            nums  = sorted(j["juz_number"] for j in user_juzs)
-            nums_str = ", ".join(map(str, nums))
+            done = sum(1 for j in user_juzs if j["status"] == "completed")
+            nums = sorted(j["juz_number"] for j in user_juzs)
             lines.append(f"👤 *{name}*")
-            lines.append(f"   Juzlar: {nums_str} ({done}/{len(user_juzs)} ✅)")
+            lines.append(f"   {', '.join(map(str, nums))} ({done}/{len(user_juzs)} ✅)")
     return "\n".join(lines)
 
 
@@ -183,7 +232,7 @@ def _ranking_text(xatm: dict, ranking: list) -> str:
             medal = medals[i] if i < 3 else f"{i+1}."
             lines.append(
                 f"{medal} *{entry['name']}* — "
-                f"{entry['completed']} juz ✅ "
+                f"{entry['completed']}/{entry['total']} ✅ "
                 f"({_fmt_time(entry.get('total_seconds', 0))})"
             )
     return "\n".join(lines)
@@ -195,7 +244,7 @@ def _ranking_keyboard(xatm_id: str) -> InlineKeyboardMarkup:
     ]])
 
 
-# ─── Core edit helper ─────────────────────────────────────────────────────────
+# ─── Core helpers ─────────────────────────────────────────────────────────────
 
 async def _edit(query, text: str, kb: InlineKeyboardMarkup):
     try:
@@ -228,14 +277,14 @@ async def _notify_participants(xatm_id: str, text: str, bot):
             pass
 
 
-# ─── Handlers ─────────────────────────────────────────────────────────────────
+# ─── Main Handlers ────────────────────────────────────────────────────────────
 
 async def show_xatm_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stats = get_xatm_stats()
     await update.message.reply_text(
         _dashboard_text(stats),
         parse_mode="Markdown",
-        reply_markup=_dashboard_keyboard(),
+        reply_markup=_dashboard_keyboard(update.effective_user.id),
     )
 
 
@@ -248,12 +297,16 @@ async def cb_xatm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "dashboard":
         await query.answer()
         stats = get_xatm_stats()
-        await _edit(query, _dashboard_text(stats), _dashboard_keyboard())
+        await _edit(query, _dashboard_text(stats), _dashboard_keyboard(user_id))
+
+    elif action == "myxatms":
+        await query.answer()
+        xatms_info = get_user_xatms(user_id)
+        await _edit(query, _my_xatms_text(xatms_info), _my_xatms_keyboard(xatms_info))
 
     elif action == "join":
         xatm_id = get_or_create_recruiting_xatm()
         if xatm_id is None:
-            # No recruiting xatm — auto-create one
             xatm_id = create_xatm(creator_id=user_id)
         await _refresh_xatm_view(query, xatm_id, user_id)
 
@@ -271,11 +324,16 @@ async def cb_xatm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if new_st == "active":
             xatm = get_xatm(xatm_id)
             num  = xatm.get("xatm_number", "?") if xatm else "?"
+            # Auto-create the next xatm so it's ready
+            create_xatm()
             await _notify_participants(xatm_id,
-                f"🚀 *Xatm #{num} boshlandi!*\nBarcha 30 juz taqsimlandi. O'qishni boshlang!",
+                f"🚀 *Xatm #{num} boshlandi!*\n"
+                f"Barcha 30 juz taqsimlandi. O'qishni boshlang!\n\n"
+                f"Keyingi Xatm #{int(num)+1 if str(num).isdigit() else '?'} ham ochildi 🎉",
                 context.bot)
 
     elif action == "done":
+        # Mark juz as completed
         xatm_id = parts[2]
         juz     = int(parts[3])
         complete_xatm_juz(xatm_id, juz, user_id)
@@ -288,6 +346,13 @@ async def cb_xatm(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🎉 *Xatm #{num} yakunlandi!*\n"
                 "Barcha ishtirokchilar juzlarini o'qib bo'ldi. Alloh qabul qilsin! 🤲",
                 context.bot)
+
+    elif action == "undone":
+        # Undo completion → back to assigned (🟡)
+        xatm_id = parts[2]
+        juz     = int(parts[3])
+        uncomplete_xatm_juz(xatm_id, juz, user_id)
+        await _refresh_xatm_view(query, xatm_id, user_id)
 
     elif action == "members":
         xatm_id = parts[2]

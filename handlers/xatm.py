@@ -100,10 +100,11 @@ def _xatm_keyboard(xatm_id: str, juz_map: dict, user_id: int, status: str) -> In
                 callback_data=f"xatm:done:{xatm_id}:{first}"
             )])
 
-    # Share button
+    # Share button — Telegram share dialog with direct deep link
+    deep_link = f"https://t.me/quranyodla_bot?start=xatm_{xatm_id}"
     rows.append([InlineKeyboardButton(
         "🔗 Do'stlarga Ulashish",
-        url=f"https://t.me/share/url?url=https://t.me/hifz_bot?start%3Dxatm_{xatm_id}"
+        url=f"https://t.me/share/url?url={deep_link}&text=Jamoaviy+Xatmga+qo%27shiling%21"
     )])
     rows.append([InlineKeyboardButton("🔙 Orqaga", callback_data="xatm:dashboard")])
     return InlineKeyboardMarkup(rows)
@@ -112,8 +113,9 @@ def _xatm_keyboard(xatm_id: str, juz_map: dict, user_id: int, status: str) -> In
 async def _edit(query, text: str, kb: InlineKeyboardMarkup):
     try:
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=kb)
-    except Exception:
-        await query.message.reply_text(text, parse_mode="Markdown", reply_markup=kb)
+    except Exception as e:
+        if "Message is not modified" not in str(e):
+            logger.warning(f"xatm _edit error: {e}")
 
 
 async def show_xatm_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -137,10 +139,7 @@ async def show_xatm_view(xatm_id: str, user_id: int, query, alert: Optional[str]
     text    = _xatm_view_text(xatm_id, xatm["status"])
     kb      = _xatm_keyboard(xatm_id, juz_map, user_id, xatm["status"])
 
-    if alert:
-        await query.answer(alert, show_alert=True)
-    else:
-        await query.answer()
+    await query.answer(alert, show_alert=bool(alert))
     await _edit(query, text, kb)
 
 

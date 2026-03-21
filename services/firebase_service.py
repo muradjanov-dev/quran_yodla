@@ -729,33 +729,25 @@ def get_xatm_juzs(xatm_id: str) -> list:
 
 
 def assign_xatm_juz(xatm_id: str, juz_number: int, user_id: int) -> bool:
-    """Atomically assigns a juz to a user. Returns False if already taken."""
+    """Assigns a juz to a user. Returns False if already taken."""
     if not db:
         return False
     doc_id = f"{xatm_id}_{juz_number}"
     ref = db.collection("group_xatm_juzs").document(doc_id)
     try:
-        from google.cloud.firestore_v1 import transaction as fs_transaction
-
-        @db.transaction()
-        def _txn(transaction):
-            snap = ref.get(transaction=transaction)
-            if snap.exists:
-                raise Exception("already_taken")
-            transaction.set(ref, {
-                "xatm_id":    xatm_id,
-                "juz_number": juz_number,
-                "user_id":    user_id,
-                "status":     "assigned",
-                "assigned_at": _now(),
-                "completed_at": None,
-            })
-
-        _txn()
+        snap = ref.get()
+        if snap.exists:
+            return False
+        ref.set({
+            "xatm_id":     xatm_id,
+            "juz_number":  juz_number,
+            "user_id":     user_id,
+            "status":      "assigned",
+            "assigned_at": _now(),
+            "completed_at": None,
+        })
         return True
     except Exception as e:
-        if "already_taken" in str(e):
-            return False
         logger.error(f"assign_xatm_juz error: {e}")
         return False
 

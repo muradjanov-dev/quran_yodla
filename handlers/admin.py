@@ -280,7 +280,10 @@ async def admin_all_users_callback(update: Update, context: ContextTypes.DEFAULT
     start     = page * page_size
     end       = min(start + page_size, total)
 
-    lines = [f"👥 FOYDALANUVCHILAR ({start+1}–{end} / {total} ta)\n"]
+    lines = [
+        f"👥 FOYDALANUVCHILAR ({start+1}–{end} / {total} ta)",
+        "─────────────────────────────────────────",
+    ]
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     user_buttons = []
     for i, u in enumerate(users[start:end], start + 1):
@@ -290,8 +293,8 @@ async def admin_all_users_callback(update: Update, context: ContextTypes.DEFAULT
         stats    = u.get("stats", {})
         verses   = stats.get("total_verses_read", 0)
         himmat   = stats.get("himmat_points", 0)
-        prem     = "💎" if u.get("premium", {}).get("is_active") else ""
-        lines.append(f"{i}. {prem}{name} | {username} | 📖{verses} 💫{himmat:,}")
+        prem     = "💎" if u.get("premium", {}).get("is_active") else "  "
+        lines.append(f"#{i:<3} {prem}{name:<16} {username:<18} 📖{verses}  💎{himmat:,}")
         user_buttons.append(InlineKeyboardButton(
             f"{i}. {name[:12]}{prem}",
             callback_data=f"admin_udetail_{uid}"

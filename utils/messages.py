@@ -230,38 +230,38 @@ def leaderboard_message(entries: list, user_id: int, user_rank: int,
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     lines  = [
         "🏆 FAOLLAR REYTINGI",
-        "──────────────────────",
+        "─────────────────────────────",
         "TOP 50 — OYLIK REYTING",
-        "──────────────────────",
+        "─────────────────────────────",
     ]
 
     for i, e in enumerate(entries[:50], 1):
-        medal   = medals.get(i, "  ")
-        name    = e.get("full_name", "Anonim")[:15]
-        verses  = e.get("total_verses", 0)
-        himmat  = e.get("himmat_points", 0)
-        is_me   = e.get("user_id") == user_id
+        name   = (e.get("full_name") or "Anonim")[:18]
+        verses = e.get("total_verses", 0)
+        himmat = e.get("himmat_points", 0)
+        is_me  = e.get("user_id") == user_id
 
         if i <= 3:
-            line = f"{medal} #{i}  {name:<16} {verses} oyat | {himmat:,} 💫"
+            prefix = f"{medals[i]} #{i}"
         elif is_me:
-            line = f"➡️ #{i} SIZNING O'RNINGIZ   {verses} oyat | {himmat:,} 💫"
+            prefix = f"➡️ #{i}"
+            name   = "SIZNING O'RNINGIZ"
         else:
-            line = f"   #{i} {name:<16} {verses} oyat | {himmat:,} 💫"
+            prefix = f"#{i}"
 
+        line = f"{prefix:<6} {name:<18} 📖{verses}  💎{himmat:,}"
         if i == 3:
-            lines.append("━")
+            lines.append("─────────────────────────────")
         lines.append(line)
 
     if user_rank > 50:
-        lines.extend([
-            "──────────────────────",
-            f"(#{user_rank-3} yuguruvchi):",
-        ])
+        lines.append("─────────────────────────────")
         if user_entry:
-            lines.append(f"➡️ #{user_rank} SIZNING O'RNINGIZ   {user_entry.get('total_verses',0)} oyat | {user_entry.get('himmat_points',0):,} 💫")
+            v = user_entry.get("total_verses", 0)
+            h = user_entry.get("himmat_points", 0)
+            lines.append(f"➡️ #{user_rank:<4} {'SIZNING O\'RNINGIZ':<18} 📖{v}  💎{h:,}")
 
-    lines.append("──────────────────────")
+    lines.append("─────────────────────────────")
     return "\n".join(lines)
 
 

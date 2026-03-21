@@ -802,7 +802,23 @@ async def _admin_message_interceptor(update: Update, context: ContextTypes.DEFAU
         raise ApplicationHandlerStop
 
 
+async def cmd_clear_xatms(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin-only: delete all xatm data from Firestore."""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    from firebase_config import db
+    juzs  = list(db.collection("group_xatm_juzs").stream())
+    xatms = list(db.collection("group_xatms").stream())
+    for d in juzs:  d.reference.delete()
+    for d in xatms: d.reference.delete()
+    await update.message.reply_text(
+        f"✅ Tozalandi: {len(xatms)} xatm, {len(juzs)} juz yozuvi o'chirildi.\n"
+        "Endi foydalanuvchilar birinchi Xatm #1 ni boshlashi mumkin."
+    )
+
+
 def register_admin_callbacks(app):
+    app.add_handler(CommandHandler("clearxatms", cmd_clear_xatms))
     # Users list with pagination + user detail
     app.add_handler(CallbackQueryHandler(admin_all_users_callback,  pattern="^admin_users_"))
     app.add_handler(CallbackQueryHandler(admin_user_detail_callback, pattern="^admin_udetail_"))

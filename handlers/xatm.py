@@ -18,7 +18,7 @@ from services.firebase_service import (
     get_xatm_stats, get_or_create_recruiting_xatm, create_xatm,
     get_xatm, get_xatm_juzs, assign_xatm_juz, complete_xatm_juz,
     unassign_xatm_juz, uncomplete_xatm_juz,
-    check_and_update_xatm_status, get_user,
+    check_and_update_xatm_status, get_user, update_user,
     get_xatm_ranking, get_user_xatms,
 )
 
@@ -193,7 +193,20 @@ def _xatm_keyboard(xatm: dict, juz_map: dict, user_id: int) -> InlineKeyboardMar
 
 # ─── Members View ─────────────────────────────────────────────────────────────
 
-def _members_text(xatm: dict, juzs: list) -> str:
+def _display_name(uid: int, viewer_uid: int) -> str:
+    """Returns name or 'Anonim' based on user's xatm_anonymous setting."""
+    user = get_user(uid)
+    if not user:
+        return "Foydalanuvchi"
+    if uid == viewer_uid:
+        # Always show own name to yourself
+        return user.get("full_name", str(uid))
+    if user.get("xatm_anonymous", False):
+        return "🫥 Anonim"
+    return user.get("full_name", str(uid))
+
+
+def _members_text(xatm: dict, juzs: list, viewer_uid: int) -> str:
     xatm_num = xatm.get("xatm_number", "?")
     by_user: dict = {}
     for j in juzs:
@@ -204,8 +217,7 @@ def _members_text(xatm: dict, juzs: list) -> str:
         lines.append("Hali hech kim qo'shilmagan.")
     else:
         for uid, user_juzs in sorted(by_user.items()):
-            user = get_user(uid)
-            name = user.get("full_name", str(uid)) if user else str(uid)
+            name = _display_name(uid, viewer_uid)
             done = sum(1 for j in user_juzs if j["status"] == "completed")
             nums = sorted(j["juz_number"] for j in user_juzs)
             lines.append(f"👤 *{name}*")
@@ -213,15 +225,17 @@ def _members_text(xatm: dict, juzs: list) -> str:
     return "\n".join(lines)
 
 
-def _members_keyboard(xatm_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🔙 Orqaga", callback_data=f"xatm:view:{xatm_id}")
-    ]])
+def _members_keyboard(xatm_id: str, is_anonymous: bool) -> InlineKeyboardMarkup:
+    toggle_label = "👁 Ismni Ko'rsatish" if is_anonymous else "🫥 Ismni Yashirish"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(toggle_label, callback_data=f"xatm:privacy:{xatm_id}")],
+        [InlineKeyboardButton("🔙 Orqaga",  callback_data=f"xatm:view:{xatm_id}")],
+    ])
 
 
 # ─── Ranking View ─────────────────────────────────────────────────────────────
 
-def _ranking_text(xatm: dict, ranking: list) -> str:
+def _ranking_text(xatm: dict, ranking: list, viewer_uid: int) -> str:
     xatm_num = xatm.get("xatm_number", "?")
     lines = [f"🏆 *Xatm #{xatm_num} — Reyting*\n"]
     if not ranking:
@@ -230,18 +244,21 @@ def _ranking_text(xatm: dict, ranking: list) -> str:
         medals = ["🥇", "🥈", "🥉"]
         for i, entry in enumerate(ranking):
             medal = medals[i] if i < 3 else f"{i+1}."
+            name  = _display_name(entry["user_id"], viewer_uid)
             lines.append(
-                f"{medal} *{entry['name']}* — "
+                f"{medal} *{name}* — "
                 f"{entry['completed']}/{entry['total']} ✅ "
                 f"({_fmt_time(entry.get('total_seconds', 0))})"
             )
     return "\n".join(lines)
 
 
-def _ranking_keyboard(xatm_id: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🔙 Orqaga", callback_data=f"xatm:view:{xatm_id}")
-    ]])
+def _ranking_keyboard(xatm_id: str, is_anonymous: bool) -> InlineKeyboardMarkup:
+    toggle_label = "👁 Ismni Ko'rsatish" if is_anonymous else "🫥 Ismni Yashirish"
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(toggle_label, callback_data=f"xatm:privacy:{xatm_id}")],
+        [InlineKeyboardButton("🔙 Orqaga",  callback_data=f"xatm:view:{xatm_id}")],
+    ])
 
 
 # ─── Core helpers ─────────────────────────────────────────────────────────────
@@ -355,13 +372,15 @@ async def cb_xatm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _refresh_xatm_view(query, xatm_id, user_id)
 
     elif action == "members":
-        xatm_id = parts[2]
+        xatm_id    = parts[2]
         await query.answer()
         xatm = get_xatm(xatm_id)
         if not xatm:
             return
-        juzs = get_xatm_juzs(xatm_id)
-        await _edit(query, _members_text(xatm, juzs), _members_keyboard(xatm_id))
+        juzs       = get_xatm_juzs(xatm_id)
+        viewer     = get_user(user_id)
+        is_anon    = viewer.get("xatm_anonymous", False) if viewer else False
+        await _edit(query, _members_text(xatm, juzs, user_id), _members_keyboard(xatm_id, is_anon))
 
     elif action == "rank":
         xatm_id = parts[2]
@@ -370,7 +389,24 @@ async def cb_xatm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ranking = get_xatm_ranking(xatm_id)
         if not xatm:
             return
-        await _edit(query, _ranking_text(xatm, ranking), _ranking_keyboard(xatm_id))
+        viewer  = get_user(user_id)
+        is_anon = viewer.get("xatm_anonymous", False) if viewer else False
+        await _edit(query, _ranking_text(xatm, ranking, user_id), _ranking_keyboard(xatm_id, is_anon))
+
+    elif action == "privacy":
+        xatm_id = parts[2]
+        viewer  = get_user(user_id)
+        is_anon = viewer.get("xatm_anonymous", False) if viewer else False
+        update_user(user_id, {"xatm_anonymous": not is_anon})
+        # Refresh members view with new setting
+        xatm = get_xatm(xatm_id)
+        if not xatm:
+            await query.answer()
+            return
+        juzs    = get_xatm_juzs(xatm_id)
+        msg     = "🫥 Ismingiz yashirildi" if not is_anon else "👁 Ismingiz ko'rinadi"
+        await query.answer(msg, show_alert=True)
+        await _edit(query, _members_text(xatm, juzs, user_id), _members_keyboard(xatm_id, not is_anon))
 
     elif action == "void":
         await query.answer()

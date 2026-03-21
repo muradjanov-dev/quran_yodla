@@ -20,23 +20,19 @@ from services.firebase_service import get_notification_settings, get_notificatio
 
 # ─── Release Notes (sent to admin on every startup) ───────────────────────────
 RELEASE_NOTES = """
-🚀 BOT ISHGA TUSHDI — v1.0.0
+🚀 BOT YANGILANDI — v1.1.0
 
-✅ YANGI XUSUSIYATLAR:
-• /start onboarding — 5 qadam, referral tizimi
-• Yodlash: 3→7→11→jamlash algoritmi (to'liq)
-• Audio: AlQuran.cloud CDN (128kbps mp3)
-• Tinglash: 8 ta qori, to'liq suralari
-• Sahifam: bugun/hafta/oy/yil statistika
-• Reyting: Top 50 + foydalanuvchi o'rni
-• Premium: chek → admin tasdiqlash/rad etish
-• Trial: 3 kunlik bepul sinov
-• Gamification: 7 daraja, 40+ himmat qoidasi
-• Streak: 3/7/14/30/100 kun bonuslari
-• Referal: +15 himmat ball ikki tomonga
-• Kunlik xabar: 5 tur (soat 08:00 Toshkent)
-• Admin panel: broadcast, user boshqarish
-• Firebase: Firestore + APScheduler
+🆕 YANGI:
+• 👥 Jamoaviy Xatm — guruhda 30 juzni taqsimlash
+  - Xatmga qo'shilish yoki yangi xatm yaratish
+  - 30 juz grid: bo'sh / olingan 🔒 / sizniki 🟢 / tugagan ✅
+  - Xatm boshlanganda va yakunida barcha ishtirokchilarga xabar
+  - Deep link orqali do'stlarni taklif qilish
+
+✅ AVVALGI XUSUSIYATLAR:
+• Yodlash, Tinglash, Sahifam, Reyting
+• Premium, Trial, Gamification, Streak
+• Referal, Kunlik xabar, Admin panel
 """
 
 # ─── Handlers ──────────────────────────────────────────────────────────────────

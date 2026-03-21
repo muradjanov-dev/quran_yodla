@@ -16,7 +16,7 @@ from config import (
     BOT_TOKEN, WEBHOOK_URL, PORT, ADMIN_ID, LOCAL_TZ
 )
 import firebase_config  # noqa: E402 — ensures Firebase is initialized at startup
-from services.firebase_service import get_notification_settings, get_notification_times_list  # noqa
+from services.firebase_service import get_notification_settings, get_notification_times_list, backfill_xatm_numbers  # noqa
 
 # ─── Release Notes (sent to admin on every startup) ───────────────────────────
 RELEASE_NOTES = """
@@ -184,6 +184,7 @@ async def run_webhook():
     await application.bot.set_webhook(full_url)
     logger.info(f"Webhook set: {full_url}")
 
+    backfill_xatm_numbers()
     setup_scheduler(application)
     await notify_admin_startup(application.bot, "webhook")
 
@@ -254,6 +255,7 @@ async def run_polling_async():
             BotCommand("start", "Boshlash / Asosiy menyu"),
             BotCommand("admin", "Admin panel"),
         ])
+        backfill_xatm_numbers()
         setup_scheduler(application)
         await notify_admin_startup(application.bot, "polling")
 

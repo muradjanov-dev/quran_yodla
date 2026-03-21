@@ -956,3 +956,29 @@ def get_user_xatms(user_id: int) -> list:
     except Exception as e:
         logger.error(f"get_user_xatms error: {e}")
         return []
+
+
+def backfill_xatm_numbers():
+    """One-time migration: assign xatm_number to any xatm missing it, ordered by created_at."""
+    if not db:
+        return
+    try:
+        docs = list(db.collection("group_xatms").stream())
+        missing = [d for d in docs if "xatm_number" not in (d.to_dict() or {})]
+        if not missing:
+            return
+        # Sort missing by created_at so numbering is chronological
+        missing.sort(key=lambda d: d.to_dict().get("created_at") or _now())
+        # Find highest existing number
+        existing_nums = [
+            d.to_dict().get("xatm_number", 0)
+            for d in docs
+            if "xatm_number" in (d.to_dict() or {})
+        ]
+        next_num = max(existing_nums, default=0) + 1
+        for doc in missing:
+            db.collection("group_xatms").document(doc.id).update({"xatm_number": next_num})
+            logger.info(f"Backfilled xatm {doc.id} → #{next_num}")
+            next_num += 1
+    except Exception as e:
+        logger.error(f"backfill_xatm_numbers error: {e}")

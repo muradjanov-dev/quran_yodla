@@ -18,6 +18,7 @@ from config import (
 from services.firebase_service import (
     get_user, get_active_session, create_session, update_session, close_session,
     get_daily_ayah_count, add_activity_to_period_safe, get_ayah_photo,
+    save_memorization_progress, get_memorization_progress,
 )
 from services.quran_api import get_ayah, get_audio_url, get_surah_ayahs
 from services.gamification import (
@@ -67,18 +68,44 @@ async def juz_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
 
     if data == "memo_continue":
-        # Resume active session
+        # 1. Try to resume an active in-progress session
         session = get_active_session(user_id)
         if session:
             context.user_data["session"] = session
             return await _send_current_ayah(query.message.chat_id, context, user_id)
-        else:
-            await query.message.reply_text("Aktiv sessiya topilmadi. Yangi boshlaylik.")
-            await query.message.reply_text(
-                "Qaysi juzdan boshlashni tanlang:",
-                reply_markup=juz_selection_keyboard()
-            )
-            return MEMO_SELECT_JUZ
+        # 2. Fall back to saved memorization progress (last completed surah+ayah)
+        prog = get_memorization_progress(user_id)
+        surah_num  = prog.get("current_surah")
+        next_ayah  = prog.get("current_ayah", 1)
+        surah_name = prog.get("current_surah_name", "")
+        if surah_num:
+            from utils.helpers import get_surah_by_number
+            surah_info = get_surah_by_number(surah_num)
+            if surah_info:
+                db_user = get_user(user_id)
+                if not is_premium(db_user) and get_daily_ayah_count(user_id) >= DAILY_FREE_LIMIT:
+                    await query.message.reply_text(limit_reached_message(), reply_markup=limit_reached_keyboard())
+                    return ConversationHandler.END
+                session = create_session(
+                    user_id      = user_id,
+                    juz_number   = surah_info.get("juz", [1])[0],
+                    surah_number = surah_num,
+                    surah_name   = surah_info["name"],
+                    direction    = "forward",
+                    reciter      = "husary",
+                    start_ayah   = next_ayah,
+                )
+                context.user_data["session"] = session
+                await query.message.reply_text(
+                    f"▶️ Davom etilmoqda: {surah_info['name']} — {next_ayah}-oyatdan"
+                )
+                return await _send_current_ayah(query.message.chat_id, context, user_id)
+        await query.message.reply_text("Aktiv sessiya topilmadi. Yangi boshlaylik.")
+        await query.message.reply_text(
+            "Qaysi juzdan boshlashni tanlang:",
+            reply_markup=juz_selection_keyboard()
+        )
+        return MEMO_SELECT_JUZ
 
     juz_number = int(data.split("_")[1])
     context.user_data["juz_number"] = juz_number
@@ -188,6 +215,13 @@ async def surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if existing:
         close_session(existing["session_id"])
 
+    # Resume from saved progress for this surah (if any)
+    prog = get_memorization_progress(user_id)
+    if prog.get("current_surah") == surah_info["number"]:
+        start_ayah = prog.get("current_ayah", 1)
+    else:
+        start_ayah = 1
+
     # Create session
     session = create_session(
         user_id     = user_id,
@@ -196,7 +230,7 @@ async def surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         surah_name  = surah_info["name"],
         direction   = direction,
         reciter     = reciter,
-        start_ayah  = 1,
+        start_ayah  = start_ayah,
     )
     context.user_data["session"] = session
 
@@ -446,6 +480,10 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     })
     session["accumulated_ayahs"] = acc
     context.user_data["session"] = session
+
+    # Save progress: next ayah to memorize
+    completed_ayah = current_ayah.get("ayah_number", session.get("current_ayah_index", 1))
+    save_memorization_progress(user_id, session["surah_number"], session.get("surah_name", ""), completed_ayah + 1)
 
     # Free user daily limit check
     db_user = get_user(user_id)

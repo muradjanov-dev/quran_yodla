@@ -318,10 +318,24 @@ def contact_reply_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 # ─── Admin Ayah Photo Inline Picker ───────────────────────────────────────────
 
-def admin_surah_select_keyboard(page: int = 0) -> InlineKeyboardMarkup:
-    """Show 10 surahs per page for admin to pick."""
+def admin_photo_entry_keyboard(has_progress: bool, surah_name: str = "", ayah_num: int = 0) -> InlineKeyboardMarkup:
+    """Entry choice: continue from last position or pick surah manually."""
+    buttons = []
+    if has_progress:
+        buttons.append([InlineKeyboardButton(
+            f"▶️ Kelgan joydan ({surah_name} {ayah_num}-oyat)",
+            callback_data="aphoto_resume"
+        )])
+    buttons.append([InlineKeyboardButton("📋 Suralar ro'yxati", callback_data="aphoto_list_0")])
+    buttons.append([InlineKeyboardButton("❌ Bekor qilish", callback_data="admin_back")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def admin_surah_select_keyboard(page: int = 0, done_surahs: set = None) -> InlineKeyboardMarkup:
+    """Show 10 surahs per page. Surahs with all photos done show ✅, partial show 📝."""
     from utils.helpers import load_surahs
     surahs = load_surahs()
+    done_surahs = done_surahs or set()
     page_size = 10
     total = len(surahs)
     start = page * page_size
@@ -330,10 +344,17 @@ def admin_surah_select_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     buttons = []
     row = []
     for s in surahs[start:end]:
-        btn = InlineKeyboardButton(
-            f"{s['number']}. {s['name']}",
-            callback_data=f"aphoto_s_{s['number']}"
-        )
+        snum = s["number"]
+        ayah_count = s["ayah_count"]
+        # count how many ayahs of this surah have photos
+        covered = sum(1 for (sn, an) in done_surahs if sn == snum)
+        if covered == 0:
+            label = f"{snum}. {s['name']}"
+        elif covered >= ayah_count:
+            label = f"✅ {snum}. {s['name']}"
+        else:
+            label = f"📝 {snum}. {s['name']} ({covered}/{ayah_count})"
+        btn = InlineKeyboardButton(label, callback_data=f"aphoto_s_{snum}")
         row.append(btn)
         if len(row) == 2:
             buttons.append(row)
@@ -341,7 +362,6 @@ def admin_surah_select_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     if row:
         buttons.append(row)
 
-    # Pagination
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton("⬅️", callback_data=f"aphoto_sp_{page-1}"))
@@ -355,8 +375,9 @@ def admin_surah_select_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def admin_ayah_select_keyboard(surah_num: int, ayah_count: int, page: int = 0) -> InlineKeyboardMarkup:
-    """Show ayah numbers for selected surah."""
+def admin_ayah_select_keyboard(surah_num: int, ayah_count: int, page: int = 0, done_ayahs: set = None) -> InlineKeyboardMarkup:
+    """Show ayah numbers. ✅ = has photo, plain number = missing."""
+    done_ayahs = done_ayahs or set()
     page_size = 20
     start = page * page_size + 1
     end = min(start + page_size - 1, ayah_count)
@@ -364,7 +385,9 @@ def admin_ayah_select_keyboard(surah_num: int, ayah_count: int, page: int = 0) -
     buttons = []
     row = []
     for n in range(start, end + 1):
-        row.append(InlineKeyboardButton(str(n), callback_data=f"aphoto_a_{n}"))
+        has_photo = (surah_num, n) in done_ayahs
+        label = f"✅{n}" if has_photo else str(n)
+        row.append(InlineKeyboardButton(label, callback_data=f"aphoto_a_{n}"))
         if len(row) == 5:
             buttons.append(row)
             row = []

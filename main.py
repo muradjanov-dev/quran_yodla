@@ -20,18 +20,18 @@ from services.firebase_service import get_notification_settings, get_notificatio
 
 # ─── Release Notes (sent to admin on every startup) ───────────────────────────
 RELEASE_NOTES = """
-🚀 BOT YANGILANDI — v1.1.0
+🚀 BOT YANGILANDI — v1.2.0
 
 🆕 YANGI:
-• 👥 Jamoaviy Xatm — guruhda 30 juzni taqsimlash
-  - Xatmga qo'shilish yoki yangi xatm yaratish
-  - 30 juz grid: bo'sh / olingan 🔒 / sizniki 🟢 / tugagan ✅
-  - Xatm boshlanganda va yakunida barcha ishtirokchilarga xabar
-  - Deep link orqali do'stlarni taklif qilish
+• 🖼 Oyatga rasm qo'shish — yangilandi:
+  - "Kelgan joydan" tugmasi: oxirgi to'xtalgan yerdan davom etish
+  - "Suralar ro'yxati": istalgan surani tanlash
+  - Suralarda ✅ (to'liq) / 📝 (qisman) belgilari
+  - Oyat tugmalarida ✅ = rasm bor, raqam = rasm yo'q
 
 ✅ AVVALGI XUSUSIYATLAR:
-• Yodlash, Tinglash, Sahifam, Reyting
-• Premium, Trial, Gamification, Streak
+• 👥 Jamoaviy Xatm, Yodlash, Tinglash
+• Sahifam, Reyting, Premium, Streak
 • Referal, Kunlik xabar, Admin panel
 """
 

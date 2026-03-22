@@ -546,6 +546,44 @@ def delete_ayah_photo(surah_number: int, ayah_number: int):
         logger.error(f"delete_ayah_photo error: {e}")
 
 
+def get_all_ayah_photos() -> set:
+    """Returns a set of (surah_number, ayah_number) tuples that already have photos."""
+    if not db:
+        return set()
+    try:
+        docs = db.collection("ayah_photos").stream()
+        return {(d.to_dict()["surah_number"], d.to_dict()["ayah_number"]) for d in docs}
+    except Exception as e:
+        logger.error(f"get_all_ayah_photos error: {e}")
+        return set()
+
+
+def get_photo_progress() -> dict:
+    """Returns last photo-upload progress: {surah_number, ayah_number}."""
+    if not db:
+        return {}
+    try:
+        doc = db.collection("settings").document("photo_progress").get()
+        return doc.to_dict() if doc.exists else {}
+    except Exception as e:
+        logger.error(f"get_photo_progress error: {e}")
+        return {}
+
+
+def save_photo_progress(surah_number: int, ayah_number: int):
+    """Saves the last uploaded ayah position so admin can continue from there."""
+    if not db:
+        return
+    try:
+        db.collection("settings").document("photo_progress").set({
+            "surah_number": surah_number,
+            "ayah_number":  ayah_number,
+            "updated_at":   _now(),
+        })
+    except Exception as e:
+        logger.error(f"save_photo_progress error: {e}")
+
+
 # ─── GLOBAL SETTINGS ──────────────────────────────────────────────────────────
 
 def get_notification_settings() -> tuple:

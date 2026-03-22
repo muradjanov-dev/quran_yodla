@@ -17,7 +17,8 @@ from config import (
 )
 from services.firebase_service import (
     get_user, get_pending_premium_requests, get_all_users,
-    set_ayah_photo, delete_ayah_photo,
+    set_ayah_photo, delete_ayah_photo, get_all_ayah_photos,
+    get_photo_progress, save_photo_progress,
     get_notification_time, get_notification_settings, get_notification_times_list,
     set_notification_time, set_notification_times, set_notification_count,
     get_premium_request, update_premium_request,
@@ -27,7 +28,7 @@ from services.premium_service import activate_premium, deactivate_premium
 from utils.keyboards import (
     admin_main_keyboard, admin_user_actions_keyboard, broadcast_confirm_keyboard,
     admin_notif_count_keyboard, admin_surah_select_keyboard,
-    admin_ayah_select_keyboard, admin_photo_next_keyboard,
+    admin_ayah_select_keyboard, admin_photo_next_keyboard, admin_photo_entry_keyboard,
 )
 from utils.messages import (
     admin_menu_message, admin_user_info_message,
@@ -360,11 +361,43 @@ async def admin_ayah_photo_init(update: Update, context: ContextTypes.DEFAULT_TY
     if query.from_user.id != ADMIN_ID:
         await query.answer(); return
     await query.answer()
+    from utils.helpers import get_surah_by_number
+    progress = get_photo_progress()
+    has_progress = bool(progress.get("surah_number"))
+    surah_name = ""
+    ayah_num = 0
+    if has_progress:
+        info = get_surah_by_number(progress["surah_number"])
+        surah_name = info["name"] if info else str(progress["surah_number"])
+        ayah_num = progress.get("ayah_number", 1)
     await query.message.reply_text(
-        "🖼 OYATGA RASM QO'SHISH\n\nSurani tanlang:",
-        reply_markup=admin_surah_select_keyboard(page=0)
+        "🖼 OYATGA RASM QO'SHISH\n\nQayerdan boshlaysiz?",
+        reply_markup=admin_photo_entry_keyboard(has_progress, surah_name, ayah_num)
     )
     return ADMIN_AYAH_PHOTO_SURAH_SELECT
+
+
+async def admin_ayah_photo_resume(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Continue from last saved position."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+    from utils.helpers import get_surah_by_number
+    progress = get_photo_progress()
+    surah_num = progress.get("surah_number", 1)
+    ayah_num  = progress.get("ayah_number", 1)
+    surah_info = get_surah_by_number(surah_num)
+    if not surah_info:
+        await query.message.reply_text("Xato: sura topilmadi."); return ADMIN_AYAH_PHOTO_SURAH_SELECT
+    context.user_data["ayah_photo_surah"]      = surah_num
+    context.user_data["ayah_photo_surah_name"] = surah_info["name"]
+    context.user_data["ayah_photo_total"]      = surah_info["ayah_count"]
+    context.user_data["ayah_photo_ayah"]       = ayah_num
+    await query.message.reply_text(
+        f"📸 {surah_info['name']} — {ayah_num}-oyat rasmini yuboring:"
+    )
+    return ADMIN_AYAH_PHOTO_UPLOAD
 
 
 async def admin_ayah_photo_surah_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -373,11 +406,18 @@ async def admin_ayah_photo_surah_page(update: Update, context: ContextTypes.DEFA
     if query.from_user.id != ADMIN_ID:
         await query.answer(); return
     await query.answer()
+    # callback_data: aphoto_sp_{page} or aphoto_list_{page}
     page = int(query.data.split("_")[-1])
+    done = get_all_ayah_photos()
     try:
-        await query.message.edit_reply_markup(reply_markup=admin_surah_select_keyboard(page=page))
+        await query.message.edit_text(
+            "🖼 OYATGA RASM QO'SHISH\n\nSurani tanlang (✅ = to'liq, 📝 = qisman):",
+            reply_markup=admin_surah_select_keyboard(page=page, done_surahs=done)
+        )
     except Exception:
-        await query.message.reply_text("Surani tanlang:", reply_markup=admin_surah_select_keyboard(page=page))
+        await query.message.reply_text(
+            "Surani tanlang:", reply_markup=admin_surah_select_keyboard(page=page, done_surahs=done)
+        )
     return ADMIN_AYAH_PHOTO_SURAH_SELECT
 
 
@@ -392,18 +432,22 @@ async def admin_ayah_photo_surah_selected(update: Update, context: ContextTypes.
     surah_info = get_surah_by_number(surah_num)
     if not surah_info:
         await query.message.reply_text("Sura topilmadi."); return ADMIN_AYAH_PHOTO_SURAH_SELECT
-    context.user_data["ayah_photo_surah"] = surah_num
+    context.user_data["ayah_photo_surah"]      = surah_num
     context.user_data["ayah_photo_surah_name"] = surah_info["name"]
-    context.user_data["ayah_photo_total"] = surah_info["ayah_count"]
+    context.user_data["ayah_photo_total"]      = surah_info["ayah_count"]
+    done = get_all_ayah_photos()
+    covered = sum(1 for (sn, _) in done if sn == surah_num)
     try:
         await query.message.edit_text(
-            f"✅ {surah_info['name']} ({surah_num}-sura, {surah_info['ayah_count']} oyat)\n\nOyat raqamini tanlang:",
-            reply_markup=admin_ayah_select_keyboard(surah_num, surah_info["ayah_count"], page=0)
+            f"📖 {surah_info['name']} ({surah_num}-sura, {surah_info['ayah_count']} oyat)\n"
+            f"✅ Rasm bor: {covered} ta | ❌ Yo'q: {surah_info['ayah_count'] - covered} ta\n\n"
+            f"Oyat raqamini tanlang:",
+            reply_markup=admin_ayah_select_keyboard(surah_num, surah_info["ayah_count"], page=0, done_ayahs=done)
         )
     except Exception:
         await query.message.reply_text(
             f"✅ {surah_info['name']}\nOyat raqamini tanlang:",
-            reply_markup=admin_ayah_select_keyboard(surah_num, surah_info["ayah_count"], page=0)
+            reply_markup=admin_ayah_select_keyboard(surah_num, surah_info["ayah_count"], page=0, done_ayahs=done)
         )
     return ADMIN_AYAH_PHOTO_AYAH_SELECT
 
@@ -420,9 +464,10 @@ async def admin_ayah_photo_ayah_page(update: Update, context: ContextTypes.DEFAU
     from utils.helpers import get_surah_by_number
     surah_info = get_surah_by_number(surah_num)
     ayah_count = surah_info["ayah_count"] if surah_info else 286
+    done = get_all_ayah_photos()
     try:
         await query.message.edit_reply_markup(
-            reply_markup=admin_ayah_select_keyboard(surah_num, ayah_count, page=page)
+            reply_markup=admin_ayah_select_keyboard(surah_num, ayah_count, page=page, done_ayahs=done)
         )
     except Exception:
         pass
@@ -435,13 +480,16 @@ async def admin_ayah_photo_back_surah(update: Update, context: ContextTypes.DEFA
     if query.from_user.id != ADMIN_ID:
         await query.answer(); return
     await query.answer()
+    done = get_all_ayah_photos()
     try:
         await query.message.edit_text(
-            "🖼 OYATGA RASM QO'SHISH\n\nSurani tanlang:",
-            reply_markup=admin_surah_select_keyboard(page=0)
+            "🖼 OYATGA RASM QO'SHISH\n\nSurani tanlang (✅ = to'liq, 📝 = qisman):",
+            reply_markup=admin_surah_select_keyboard(page=0, done_surahs=done)
         )
     except Exception:
-        await query.message.reply_text("Surani tanlang:", reply_markup=admin_surah_select_keyboard(page=0))
+        await query.message.reply_text(
+            "Surani tanlang:", reply_markup=admin_surah_select_keyboard(page=0, done_surahs=done)
+        )
     return ADMIN_AYAH_PHOTO_SURAH_SELECT
 
 
@@ -476,6 +524,7 @@ async def admin_ayah_photo_upload(update: Update, context: ContextTypes.DEFAULT_
     total      = context.user_data.pop("ayah_photo_total", 286)
     file_id    = update.message.photo[-1].file_id
     set_ayah_photo(surah, ayah, file_id, ADMIN_ID)
+    save_photo_progress(surah, ayah + 1 if ayah < total else ayah)
     await update.message.reply_text(
         f"✅ {surah_name} {ayah}-oyatga rasm saqlandi!",
         reply_markup=admin_photo_next_keyboard(surah, surah_name, ayah + 1, total)
@@ -496,10 +545,10 @@ async def admin_ayah_photo_next(update: Update, context: ContextTypes.DEFAULT_TY
     surah_info = get_surah_by_number(surah_num)
     surah_name = surah_info["name"] if surah_info else ""
     total      = surah_info["ayah_count"] if surah_info else 286
-    context.user_data["ayah_photo_surah"] = surah_num
-    context.user_data["ayah_photo_ayah"]  = ayah_num
+    context.user_data["ayah_photo_surah"]      = surah_num
+    context.user_data["ayah_photo_ayah"]       = ayah_num
     context.user_data["ayah_photo_surah_name"] = surah_name
-    context.user_data["ayah_photo_total"] = total
+    context.user_data["ayah_photo_total"]      = total
     await query.message.reply_text(
         f"📸 {surah_name} — {ayah_num}-oyat rasmini yuboring:"
     )
@@ -731,6 +780,8 @@ def build_admin_handler() -> ConversationHandler:
                 MessageHandler(filters.TEXT & ~filters.COMMAND, admin_user_search),
             ],
             ADMIN_AYAH_PHOTO_SURAH_SELECT: [
+                CallbackQueryHandler(admin_ayah_photo_resume,         pattern="^aphoto_resume$"),
+                CallbackQueryHandler(admin_ayah_photo_surah_page,     pattern="^aphoto_list_"),
                 CallbackQueryHandler(admin_ayah_photo_surah_selected, pattern="^aphoto_s_"),
                 CallbackQueryHandler(admin_ayah_photo_surah_page,     pattern="^aphoto_sp_"),
             ],

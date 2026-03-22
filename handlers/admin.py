@@ -524,7 +524,11 @@ async def admin_ayah_photo_upload(update: Update, context: ContextTypes.DEFAULT_
     total      = context.user_data.pop("ayah_photo_total", 286)
     file_id    = update.message.photo[-1].file_id
     set_ayah_photo(surah, ayah, file_id, ADMIN_ID)
-    save_photo_progress(surah, ayah + 1 if ayah < total else ayah)
+    if ayah >= total and surah < 114:
+        save_photo_progress(surah + 1, 1)   # advance to next surah
+    elif ayah < total:
+        save_photo_progress(surah, ayah + 1)
+    # else: surah 114 last ayah — don't advance past end
     await update.message.reply_text(
         f"✅ {surah_name} {ayah}-oyatga rasm saqlandi!",
         reply_markup=admin_photo_next_keyboard(surah, surah_name, ayah + 1, total)

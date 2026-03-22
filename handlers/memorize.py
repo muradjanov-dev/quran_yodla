@@ -250,7 +250,8 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
     surah_name  = session["surah_name"]
     reciter     = session["reciter"]
     acc_ayahs   = session.get("accumulated_ayahs", [])
-    next_index  = len(acc_ayahs) + 1
+    start_ayah  = session.get("start_ayah", 1)
+    next_index  = start_ayah + len(acc_ayahs)
 
     ayah_data = get_ayah(surah_num, next_index)
     if not ayah_data:
@@ -481,9 +482,10 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session["accumulated_ayahs"] = acc
     context.user_data["session"] = session
 
-    # Save progress: next ayah to memorize
-    completed_ayah = current_ayah.get("ayah_number", session.get("current_ayah_index", 1))
-    save_memorization_progress(user_id, session["surah_number"], session.get("surah_name", ""), completed_ayah + 1)
+    # Save progress: next ayah to memorize = start_ayah + how many ayahs accumulated so far
+    start_ayah_s = session.get("start_ayah", 1)
+    next_to_memorize = start_ayah_s + len(acc)
+    save_memorization_progress(user_id, session["surah_number"], session.get("surah_name", ""), next_to_memorize)
 
     # Free user daily limit check
     db_user = get_user(user_id)

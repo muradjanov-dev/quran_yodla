@@ -238,17 +238,7 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
     m = await bot.send_message(chat_id, ayah_header(surah_name, surah_num, next_index, total_ayahs))
     step_msgs.append(m.message_id)
 
-    # Audio
-    audio_url = get_audio_url(ayah_data["global_number"], reciter)
-    try:
-        m = await bot.send_audio(chat_id, audio=audio_url)
-        step_msgs.append(m.message_id)
-    except Exception as e:
-        logger.warning(f"Audio send failed: {e}")
-        m = await bot.send_message(chat_id, f"🎧 Audio: {audio_url}")
-        step_msgs.append(m.message_id)
-
-    # Ayah photo (if admin has added one)
+    # Ayah photo (if admin has added one) — shown BEFORE audio
     photo_file_id = get_ayah_photo(surah_num, next_index)
     logger.info(f"Ayah photo lookup: surah={surah_num}, ayah={next_index}, found={bool(photo_file_id)}")
     if photo_file_id:
@@ -259,6 +249,16 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
         except Exception as e:
             logger.error(f"Ayah photo send FAILED for {surah_num}:{next_index} — file_id={photo_file_id[:20]}… — error: {e}")
             photo_file_id = None  # mark as unavailable for this session
+
+    # Audio — shown AFTER photo, BEFORE text
+    audio_url = get_audio_url(ayah_data["global_number"], reciter)
+    try:
+        m = await bot.send_audio(chat_id, audio=audio_url)
+        step_msgs.append(m.message_id)
+    except Exception as e:
+        logger.warning(f"Audio send failed: {e}")
+        m = await bot.send_message(chat_id, f"🎧 Audio: {audio_url}")
+        step_msgs.append(m.message_id)
 
     # Text + 3x button
     await bot.send_message(

@@ -13,10 +13,16 @@ import pytz
 from telegram import Update
 from services.firebase_service import (
     get_all_notification_enabled_users, get_user,
-    get_daily_stats, get_period_stats, log_notification
+    get_daily_stats, get_period_stats, log_notification,
+    get_user_percentile
 )
 from services.stats_service import format_time
 from utils.keyboards import snooze_keyboard, open_memorize_keyboard
+
+# Quran constants for calculations
+TOTAL_AYAHS = 6236
+AVG_LETTERS_PER_AYAH = 40   # approximate
+HASANA_PER_LETTER = 10       # each letter = 10 hasana (reward)
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +35,94 @@ def _load_quotes() -> list:
         return json.load(f)
 
 
-def _build_notification(user: dict) -> tuple[str, object]:
-    """Returns (text, keyboard) for the notification."""
+def _calc_hafiz_projection(daily_ayahs: int) -> str:
+    """Calculate how many months to become Hafiz at a given daily pace."""
+    if daily_ayahs <= 0:
+        return ""
+    days_needed = TOTAL_AYAHS / daily_ayahs
+    months = days_needed / 30
+    if months < 1:
+        return "1 oydan kam"
+    return f"{int(months)} oy"
+
+
+def _calc_daily_ajr(daily_ayahs: int) -> str:
+    """Approximate daily hasana (ajr) from memorizing ayahs.
+    Hadith: har bir harf uchun 10 ta savob."""
+    if daily_ayahs <= 0:
+        return "0"
+    total = daily_ayahs * AVG_LETTERS_PER_AYAH * HASANA_PER_LETTER
+    if total >= 1_000_000:
+        return f"{total / 1_000_000:.1f} million"
+    if total >= 1000:
+        return f"{total:,}"
+    return str(total)
+
+
+def _build_motivation_text(user: dict) -> str:
+    """Build personalized motivation text with Hafiz projection, ajr, and percentile."""
+    name = user.get("full_name", "Do'stim")
+    uid = user.get("telegram_id")
+    stats = user.get("stats", {})
+    total_verses = stats.get("total_verses_read", 0)
+    remaining = max(TOTAL_AYAHS - total_verses, 0)
+
+    # Calculate user's average daily pace
+    reg_date = user.get("registration_date")
+    now = datetime.now(TZ)
+    if reg_date and hasattr(reg_date, "astimezone"):
+        days_active = max((now - reg_date.astimezone(TZ)).days, 1)
+    else:
+        days_active = 1
+    avg_daily = total_verses / days_active if days_active > 0 else 0
+
+    percentile = get_user_percentile(uid) if uid else 0
+
+    lines = [f"📊 {name}, sizning shaxsiy hisobingiz:\n"]
+
+    if total_verses == 0:
+        # New user — projection based on different commitments
+        lines.append("Siz hali yodlashni boshlamadingiz.\n")
+        lines.append("📌 Agar har kuni shuncha oyat yodlasangiz:\n")
+        for daily in [3, 5, 10, 20]:
+            proj = _calc_hafiz_projection(daily)
+            ajr = _calc_daily_ajr(daily)
+            lines.append(f"  • {daily} oyat/kun → Hofiz {proj}da | kunlik ~{ajr} savob")
+        lines.append(f"\n📿 Hadis: \"Qur'on o'qigan kishiga har bir harf uchun "
+                      f"10 ta savob yoziladi\" (Termiziy)")
+        lines.append(f"\n💪 Birinchi qadamni qo'ying — 1 oyat ham katta boshlang'ich!")
+    else:
+        # Active user — personalized stats
+        if avg_daily >= 1:
+            proj = _calc_hafiz_projection(avg_daily)
+            lines.append(f"📖 Jami yodlangan: {total_verses:,} / {TOTAL_AYAHS:,} oyat")
+            lines.append(f"📈 O'rtacha tezlik: {avg_daily:.1f} oyat/kun")
+            lines.append(f"🕌 Shu tezlikda Hofiz bo'lasiz: ~{proj}")
+        else:
+            lines.append(f"📖 Jami yodlangan: {total_verses:,} oyat")
+            lines.append(f"⏳ Qolgan: {remaining:,} oyat")
+
+        # Daily ajr calculation
+        daily_pace = max(avg_daily, 1)
+        ajr = _calc_daily_ajr(int(daily_pace))
+        lines.append(f"\n📿 Kunlik taxminiy savob: ~{ajr} hasana")
+        lines.append(f"   (har harf = 10 savob, Termiziy rivoyati)")
+
+        # Percentile ranking
+        if percentile > 0:
+            lines.append(f"\n🏅 Siz foydalanuvchilarning {percentile}% dan oldinda!")
+
+        # Faster projection
+        if avg_daily < 10:
+            faster_daily = min(int(avg_daily) + 5, 20)
+            faster_proj = _calc_hafiz_projection(faster_daily)
+            lines.append(f"\n💡 Agar kuniga {faster_daily} oyat yodlasangiz → Hofiz {faster_proj}da!")
+
+    return "\n".join(lines)
+
+
+def _build_notification(user: dict) -> tuple:
+    """Returns (text, keyboard, notif_type) for the notification."""
     name    = user.get("full_name", "Do'stim")
     stats   = user.get("stats", {})
     streak  = stats.get("current_streak_days", 0)
@@ -45,16 +137,22 @@ def _build_notification(user: dict) -> tuple[str, object]:
         notif_type = "weekly"
     elif streak >= 3 and random.random() < 0.4:
         notif_type = "streak"
+    elif random.random() < 0.3:
+        notif_type = "motivation"  # 30% chance for personalized stats
     else:
         notif_type = random.choice(["motivational", "quote", "hadith", "ayah", "reward"])
 
     if notif_type == "streak" and streak >= 1:
         text = (
-            f"🔥 {name}, {streak}-kunlik streakingiz bor!\n\n"
+            f"🌟 {name}, {streak}-kunlik streakingiz bor!\n\n"
             f"Bugun ham bir oyat yodlasangiz streak saqlanadi.\n"
             f"Uzmaslik uchun hoziroq 1 daqiqa vaqt ajrating!"
         )
         keyboard = snooze_keyboard()
+
+    elif notif_type == "motivation":
+        text = _build_motivation_text(user)
+        keyboard = open_memorize_keyboard()
 
     elif notif_type == "quote":
         quote_items = [q for q in quotes if q["type"] == "quote"]
@@ -97,16 +195,23 @@ def _build_notification(user: dict) -> tuple[str, object]:
             f"📖 Oyatlar: {week_stats.get('verses_read', 0)}\n"
             f"🔄 Takrorlar: {week_stats.get('repetitions', 0)}\n"
             f"⏱ Vaqt: {week_stats.get('minutes', 0)} daqiqa\n"
-            f"💫 Himmat: +{week_stats.get('himmat_earned', 0)}\n"
+            f"💎 Himmat: +{week_stats.get('himmat_earned', 0)}\n"
             f"━━━━━━━━━━━━━━━━━━━━"
         )
         keyboard = open_memorize_keyboard()
 
     elif notif_type == "reward":
+        # Calculate personalized ajr
+        total_v = stats.get("total_verses_read", 0)
+        total_ajr = total_v * AVG_LETTERS_PER_AYAH * HASANA_PER_LETTER
+        ajr_str = f"{total_ajr:,}" if total_ajr < 1_000_000 else f"{total_ajr/1_000_000:.1f} million"
         text = (
             f"⭐ Assalomu alaykum, {name}!\n\n"
             f"📿 Alloh taolo va'da qilgan:\n"
-            f"\"Qur'on qori qiyomatda ota-onasiga nur toji kiydirilur...\"\n\n"
+            f"\"Qur'on o'qigan kishiga har bir harf uchun "
+            f"10 ta savob yoziladi\" (Termiziy)\n\n"
+            f"📖 Siz {total_v:,} oyat yodladingiz\n"
+            f"📿 Taxminiy savobingiz: ~{ajr_str} hasana!\n\n"
             f"Bugun ham bir oyat yodlang — ajr bekor ketmaydi! 🤲"
         )
         keyboard = open_memorize_keyboard()

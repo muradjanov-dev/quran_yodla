@@ -22,6 +22,7 @@ from services.firebase_service import (
     get_notification_time, get_notification_settings, get_notification_times_list,
     set_notification_time, set_notification_times, set_notification_count,
     get_premium_request, update_premium_request,
+    get_daily_stats,
 )
 from services.stats_service import get_bot_wide_stats
 from services.premium_service import activate_premium, deactivate_premium
@@ -860,6 +861,67 @@ async def _admin_message_interceptor(update: Update, context: ContextTypes.DEFAU
         raise ApplicationHandlerStop
 
 
+async def admin_daily_summary_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show today's memorization summary: who memorized how many ayahs."""
+    query = update.callback_query
+    if query.from_user.id != ADMIN_ID:
+        await query.answer(); return
+    await query.answer()
+
+    from datetime import datetime
+    import pytz
+    TZ = pytz.timezone("Asia/Tashkent")
+    today_str = datetime.now(TZ).strftime("%Y-%m-%d")
+
+    users = get_all_users()
+    daily_data = []
+    total_ayahs = 0
+
+    for u in users:
+        uid = u.get("telegram_id")
+        if not uid:
+            continue
+        stats = get_daily_stats(uid, today_str)
+        verses = stats.get("verses_read", 0)
+        if verses > 0:
+            name = (u.get("full_name") or "Anonim")[:20]
+            username = f"@{u['username']}" if u.get("username") else ""
+            daily_data.append((name, username, verses, stats.get("repetitions", 0), stats.get("minutes", 0)))
+            total_ayahs += verses
+
+    # Sort by verses descending
+    daily_data.sort(key=lambda x: x[2], reverse=True)
+
+    lines = [
+        f"📋 KUNLIK HISOBOT — {today_str}",
+        f"─────────────────────────────",
+        f"👥 Faol: {len(daily_data)} ta | 📖 Jami: {total_ayahs} oyat",
+        f"─────────────────────────────",
+    ]
+
+    if not daily_data:
+        lines.append("\nBugun hech kim yodlamadi 😔")
+    else:
+        for i, (name, uname, verses, reps, mins) in enumerate(daily_data[:30], 1):
+            uname_str = f" {uname}" if uname else ""
+            lines.append(f"#{i:<3} {name}{uname_str}")
+            lines.append(f"     📖 {verses} oyat | 🔄 {reps} | ⏱ {mins} daq")
+
+        if len(daily_data) > 30:
+            lines.append(f"\n... va yana {len(daily_data) - 30} foydalanuvchi")
+
+    lines.append("─────────────────────────────")
+
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton("↩️ Orqaga", callback_data="admin_back")],
+    ])
+    try:
+        await query.message.edit_text("\n".join(lines), reply_markup=kb)
+    except Exception:
+        await query.message.reply_text("\n".join(lines), reply_markup=kb)
+
+
 async def cmd_clear_xatms(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin-only: delete all xatm data from Firestore."""
     if update.effective_user.id != ADMIN_ID:
@@ -877,6 +939,8 @@ async def cmd_clear_xatms(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def register_admin_callbacks(app):
     app.add_handler(CommandHandler("clearxatms", cmd_clear_xatms))
+    # Daily summary
+    app.add_handler(CallbackQueryHandler(admin_daily_summary_callback, pattern="^admin_daily_summary$"))
     # Users list with pagination + user detail
     app.add_handler(CallbackQueryHandler(admin_all_users_callback,  pattern="^admin_users_"))
     app.add_handler(CallbackQueryHandler(admin_user_detail_callback, pattern="^admin_udetail_"))

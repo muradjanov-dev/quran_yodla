@@ -722,6 +722,22 @@ def get_all_users() -> list:
         return []
 
 
+def get_user_percentile(user_id: int) -> int:
+    """Returns what % of users this user is ahead of (0-100)."""
+    users = get_all_users()
+    if len(users) <= 1:
+        return 0
+    user_himmat = 0
+    all_himmats = []
+    for u in users:
+        h = u.get("stats", {}).get("himmat_points", 0)
+        all_himmats.append(h)
+        if u.get("telegram_id") == user_id:
+            user_himmat = h
+    below = sum(1 for h in all_himmats if h < user_himmat)
+    return int((below / len(all_himmats)) * 100)
+
+
 # ─── JAMOAVIY XATM ────────────────────────────────────────────────────────────
 
 def get_or_create_recruiting_xatm() -> Optional[str]:

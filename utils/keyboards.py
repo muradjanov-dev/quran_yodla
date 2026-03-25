@@ -264,6 +264,7 @@ def admin_main_keyboard(pending_count: int = 0, notif_time: str = "08:00",
         [InlineKeyboardButton(f"⏰ Bildirishnoma: {notif_time}",         callback_data="admin_notif_time")],
         [InlineKeyboardButton(f"🔔 Kunlik soni: {notif_count}x",         callback_data="admin_notif_count")],
         [InlineKeyboardButton("📊 Batafsil statistika",                  callback_data="admin_stats")],
+        [InlineKeyboardButton("📋 Kunlik hisobot",                       callback_data="admin_daily_summary")],
     ])
 
 

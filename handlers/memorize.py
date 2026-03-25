@@ -315,6 +315,11 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
         "ayah_number":   next_index,
         "photo_file_id": photo_file_id,  # may be None
     }
+    from datetime import datetime
+    import pytz
+    _tz = pytz.timezone("Asia/Tashkent")
+    ayah_started_at = datetime.now(_tz)
+
     update_session(session["session_id"], {
         "current_ayah_index": next_index,
         "stage":              "rep_3",
@@ -325,6 +330,7 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
     session["current_ayah_data"]  = ayah_record
     context.user_data["session"]  = session
     context.user_data["_cur_ayah"] = ayah_record  # fast fallback for rep_3/rep_7
+    context.user_data["_ayah_started_at"] = ayah_started_at
 
     return MEMO_REP_3
 
@@ -456,7 +462,18 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if level_up:
         await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
-    add_activity_to_period_safe(user_id, 1, 3+7+11, 5, points_for_repetition(11), [session.get("surah_name", "")])
+    # Calculate actual time spent on this ayah
+    from datetime import datetime
+    import pytz
+    _tz = pytz.timezone("Asia/Tashkent")
+    _ayah_start = context.user_data.get("_ayah_started_at")
+    if _ayah_start:
+        _elapsed = (datetime.now(_tz) - _ayah_start).total_seconds()
+        _minutes = max(1, int(_elapsed / 60))
+    else:
+        _minutes = 5  # fallback
+
+    add_activity_to_period_safe(user_id, 1, 3+7+11, _minutes, points_for_repetition(11), [session.get("surah_name", "")])
 
     from datetime import date as _date
     _today_key = f"_streak_updated_{_date.today().isoformat()}"

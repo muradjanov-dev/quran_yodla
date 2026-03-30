@@ -118,6 +118,35 @@ CREATE TABLE IF NOT EXISTS ayah_interactions (
 
 CREATE INDEX IF NOT EXISTS idx_ayah_inter_user ON ayah_interactions(user_id, interaction);
 
+-- Weekly XP tracking (resets every Monday)
+CREATE TABLE IF NOT EXISTS weekly_xp (
+    user_id     INTEGER PRIMARY KEY REFERENCES users(id),
+    xp          INTEGER NOT NULL DEFAULT 0,
+    week_start  TEXT    NOT NULL DEFAULT (date('now','weekday 1','-7 days'))
+);
+
+-- Earned achievements per user
+CREATE TABLE IF NOT EXISTS user_achievements (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id        INTEGER NOT NULL REFERENCES users(id),
+    achievement_id TEXT    NOT NULL,
+    earned_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, achievement_id)
+);
+
+-- Pending congrats notifications queue (rate-limited to max 5/day per recipient)
+CREATE TABLE IF NOT EXISTS congrats_queue (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    achiever_id     INTEGER NOT NULL REFERENCES users(id),
+    recipient_id    INTEGER NOT NULL REFERENCES users(id),
+    achievement_id  TEXT    NOT NULL,
+    sent            INTEGER NOT NULL DEFAULT 0,
+    sent_at         TEXT    DEFAULT NULL,
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_congrats_recipient ON congrats_queue(recipient_id, sent);
+
 CREATE TABLE IF NOT EXISTS group_xatms (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     creator_id    INTEGER REFERENCES users(id),

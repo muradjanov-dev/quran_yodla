@@ -306,6 +306,12 @@ async def _advance(target, user_id: int, confirmed: str, bot=None):
         ayah_count = AYAH_COUNTS[surah - 1] if 1 <= surah <= 114 else 1
         db.mark_ayah(user_id, surah, ayah, memorized=True)
         db.increment_flow_daily(user_id)
+        db.add_weekly_xp(user_id, xp)
+        # Check achievements after memorizing
+        if bot:
+            from src.handlers.achievements import check_and_award
+            import asyncio
+            asyncio.ensure_future(check_and_award(user_id, bot))
         next_ayah  = ayah + 1
 
         if next_ayah > ayah_count:

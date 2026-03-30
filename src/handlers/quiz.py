@@ -410,10 +410,15 @@ async def cb_quiz(update: Update, context: ContextTypes.DEFAULT_TYPE):
             correct_count += 1
             db.update_quiz_session(user.id, correct_count=correct_count)
             new_xp, _, _ = db.add_xp(user.id, XP_PER_CORRECT)
+            db.add_weekly_xp(user.id, XP_PER_CORRECT)
             prefix = t(user.id, "quiz_correct")
             # Log interaction for analytics
             if log_surah and log_ayah:
                 db.log_interaction(user.id, log_surah, log_ayah, 'quiz_correct')
+            # Check achievements
+            from src.handlers.achievements import check_and_award
+            import asyncio
+            asyncio.ensure_future(check_and_award(user.id, context.bot))
         else:
             prefix = t(user.id, "quiz_wrong", answer=correct_str[:60])
             if log_surah and log_ayah:

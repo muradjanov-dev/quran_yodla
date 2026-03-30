@@ -180,13 +180,18 @@ async def cb_xatm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "complete_juz":
         _, _, xatm_id, juz = data
         xatm_id, juz = int(xatm_id), int(juz)
-        
+
         db.complete_xatm_juz(xatm_id, juz, user.id)
         await query.answer()
-        
+
         new_status = db.check_and_update_xatm_status(xatm_id)
         await _show_xatm_view(query, user.id, xatm_id)
-        
+
+        # Check achievements after completing a juz
+        from src.handlers.achievements import check_and_award
+        import asyncio
+        asyncio.ensure_future(check_and_award(user.id, context.bot))
+
         if new_status == "completed":
             await _notify_all_participants(xatm_id, "xatm_marathon_completed_notify", context.bot)
 

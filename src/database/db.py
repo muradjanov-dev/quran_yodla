@@ -553,7 +553,7 @@ def migrate_db():
                 created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
             );
             CREATE INDEX IF NOT EXISTS idx_ayah_inter_user ON ayah_interactions(user_id, interaction);
-            
+
             CREATE TABLE IF NOT EXISTS group_xatms (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 creator_id    INTEGER REFERENCES users(id),
@@ -573,6 +573,32 @@ def migrate_db():
                 completed_at  TEXT,
                 UNIQUE(xatm_id, juz_number)
             );
+
+            CREATE TABLE IF NOT EXISTS weekly_xp (
+                user_id     INTEGER PRIMARY KEY REFERENCES users(id),
+                xp          INTEGER NOT NULL DEFAULT 0,
+                week_start  TEXT    NOT NULL DEFAULT (date('now','weekday 1','-7 days'))
+            );
+
+            CREATE TABLE IF NOT EXISTS user_achievements (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id        INTEGER NOT NULL REFERENCES users(id),
+                achievement_id TEXT    NOT NULL,
+                earned_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(user_id, achievement_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS congrats_queue (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                achiever_id     INTEGER NOT NULL REFERENCES users(id),
+                recipient_id    INTEGER NOT NULL REFERENCES users(id),
+                achievement_id  TEXT    NOT NULL,
+                sent            INTEGER NOT NULL DEFAULT 0,
+                sent_at         TEXT    DEFAULT NULL,
+                created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_congrats_recipient ON congrats_queue(recipient_id, sent);
         """)
 
 def _try_alter(conn, sql: str):
@@ -716,3 +742,117 @@ def get_xatm_stats() -> dict:
         "fastest_seconds": fast,
         "longest_seconds": long
     }
+
+# ── Achievements ─────────────────────────────────────────────────────────────
+
+def has_achievement(user_id: int, achievement_id: str) -> bool:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM user_achievements WHERE user_id=? AND achievement_id=?",
+            (user_id, achievement_id)
+        ).fetchone()
+    return row is not None
+
+def unlock_achievement(user_id: int, achievement_id: str) -> bool:
+    """Returns True if newly unlocked, False if already had it."""
+    try:
+        with get_conn() as conn:
+            conn.execute(
+                "INSERT INTO user_achievements(user_id, achievement_id) VALUES(?,?)",
+                (user_id, achievement_id)
+            )
+        return True
+    except Exception:
+        return False
+
+def get_user_achievements(user_id: int) -> list[str]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT achievement_id FROM user_achievements WHERE user_id=? ORDER BY earned_at",
+            (user_id,)
+        ).fetchall()
+    return [r["achievement_id"] for r in rows]
+
+def get_all_user_ids() -> list[int]:
+    with get_conn() as conn:
+        rows = conn.execute("SELECT id FROM users").fetchall()
+    return [r["id"] for r in rows]
+
+# ── Weekly XP ─────────────────────────────────────────────────────────────────
+
+def _current_week_start() -> str:
+    """ISO date of most recent Monday."""
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    return monday.isoformat()
+
+def add_weekly_xp(user_id: int, amount: int):
+    week = _current_week_start()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO weekly_xp(user_id, xp, week_start) VALUES(?,?,?) "
+            "ON CONFLICT(user_id) DO UPDATE SET "
+            "xp = CASE WHEN week_start=excluded.week_start THEN xp+excluded.xp ELSE excluded.xp END, "
+            "week_start = excluded.week_start",
+            (user_id, amount, week)
+        )
+
+def get_weekly_leaderboard(limit: int = 10) -> list[dict]:
+    week = _current_week_start()
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT w.user_id, u.name, w.xp AS weekly_xp "
+            "FROM weekly_xp w JOIN users u ON u.id=w.user_id "
+            "WHERE w.week_start=? ORDER BY w.xp DESC LIMIT ?",
+            (week, limit)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+def reset_weekly_xp():
+    """Archive week and zero out — called at Monday 00:00."""
+    with get_conn() as conn:
+        conn.execute("UPDATE weekly_xp SET xp=0, week_start=?", (_current_week_start(),))
+
+# ── Congrats Queue ────────────────────────────────────────────────────────────
+
+MAX_CONGRATS_PER_DAY = 5
+
+def enqueue_congrats(achiever_id: int, achievement_id: str):
+    """Queue congrats to all other users (unsent, pending delivery)."""
+    all_ids = get_all_user_ids()
+    with get_conn() as conn:
+        for uid in all_ids:
+            if uid == achiever_id:
+                continue
+            conn.execute(
+                "INSERT INTO congrats_queue(achiever_id, recipient_id, achievement_id) VALUES(?,?,?)",
+                (achiever_id, uid, achievement_id)
+            )
+
+def get_pending_congrats_for(recipient_id: int, limit: int = 1) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT cq.*, u.name AS achiever_name FROM congrats_queue cq "
+            "JOIN users u ON u.id=cq.achiever_id "
+            "WHERE cq.recipient_id=? AND cq.sent=0 "
+            "ORDER BY cq.created_at ASC LIMIT ?",
+            (recipient_id, limit)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+def mark_congrats_sent(congrats_id: int):
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE congrats_queue SET sent=1, sent_at=? WHERE id=?",
+            (datetime.utcnow().isoformat(), congrats_id)
+        )
+
+def get_congrats_sent_today(recipient_id: int) -> int:
+    today = date.today().isoformat()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM congrats_queue "
+            "WHERE recipient_id=? AND sent=1 AND sent_at >= ?",
+            (recipient_id, today)
+        ).fetchone()
+    return row[0] if row else 0

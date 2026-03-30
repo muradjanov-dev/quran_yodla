@@ -651,6 +651,42 @@ def check_and_update_xatm_status(xatm_id: int) -> str | None:
             
     return None
 
+def get_all_users() -> list:
+    with get_conn() as conn:
+        return conn.execute("SELECT id, name, language FROM users").fetchall()
+
+def get_new_users_today() -> int:
+    today = date.today().isoformat()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE created_at >= ?", (today,)
+        ).fetchone()
+    return row[0] if row else 0
+
+def get_premium_count() -> int:
+    now = datetime.utcnow().isoformat()
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM premium WHERE active=1 AND (expires_at IS NULL OR expires_at > ?)",
+            (now,)
+        ).fetchone()
+    return row[0] if row else 0
+
+def get_user_xatm_participation(user_id: int) -> dict | None:
+    """Returns active xatm participation info for a user, or None."""
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT j.xatm_id, x.status, "
+            "  (SELECT COUNT(*) FROM group_xatm_juzs WHERE xatm_id=j.xatm_id) AS total_juzs, "
+            "  (SELECT COUNT(*) FROM group_xatm_juzs WHERE xatm_id=j.xatm_id AND status='completed') AS completed_juzs "
+            "FROM group_xatm_juzs j "
+            "JOIN group_xatms x ON x.id=j.xatm_id "
+            "WHERE j.user_id=? AND x.status IN ('recruiting','active') "
+            "ORDER BY j.xatm_id DESC LIMIT 1",
+            (user_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
 def get_xatm_stats() -> dict:
     with get_conn() as conn:
         total = conn.execute("SELECT COUNT(*) FROM group_xatms WHERE status='completed'").fetchone()[0]

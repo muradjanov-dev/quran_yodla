@@ -1,4 +1,4 @@
-"""Updated scheduler: reminders + daily motivation for inactive users + admin decline handling."""
+"""Updated scheduler: reminders + daily motivation + xatm reminders + admin daily report."""
 from datetime import datetime, date, timedelta
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -157,6 +157,130 @@ async def run_motivations(bot):
             print(f"[Scheduler] Motivation failed for {user_id}: {e}")
 
     _day_counter[0] += 1
+
+async def run_xatm_reminders(bot):
+    """Daily reminder to all users about Xatm feature. Participants get progress info."""
+    all_users = db.get_all_users()
+    for row in all_users:
+        user_id = row["id"]
+        lang = row.get("language", "en") if hasattr(row, "get") else dict(row).get("language", "en")
+
+        # Check if user has an active xatm assignment
+        participation = db.get_user_xatm_participation(user_id)
+
+        if participation:
+            xatm_id = participation["xatm_id"]
+            completed_juzs = participation["completed_juzs"]
+            remaining = 30 - completed_juzs
+            pct_done = int(completed_juzs / 30 * 100)
+            pct_left = 100 - pct_done
+
+            if lang == "uz":
+                text = (
+                    f"📖 *Jamoaviy Xatm Eslatmasi*\n\n"
+                    f"Siz #{xatm_id} Xatmga qo'shilgansiz.\n\n"
+                    f"📊 *Holat:*\n"
+                    f"• Tugallangan poralar: {completed_juzs}/30\n"
+                    f"• Qolgan poralar: {remaining}\n"
+                    f"• Yakunlanishiga: {pct_left}% qoldi\n\n"
+                    f"✨ *Ajr va savob va'dalari:*\n"
+                    f"_«Qur'on qiyomat kuni o'z sohiblari uchun shafkovchi bo'lib keladi.»_\n"
+                    f"_«Qur'on o'qigan har bir harfga 10 savob yoziladi.»_ (Tirmiziy)\n\n"
+                    f"Xatmni davom ettiring!"
+                )
+            else:
+                text = (
+                    f"📖 *Group Khatm Reminder*\n\n"
+                    f"You are part of Khatm #{xatm_id}.\n\n"
+                    f"📊 *Progress:*\n"
+                    f"• Completed Juz: {completed_juzs}/30\n"
+                    f"• Remaining: {remaining} Juz\n"
+                    f"• {pct_left}% left until completion\n\n"
+                    f"✨ *Rewards & Blessings:*\n"
+                    f"_\"The Quran will come as an intercessor for its companions on the Day of Judgment.\"_\n"
+                    f"_\"Every letter recited earns 10 rewards.\"_ (Tirmidhi)\n\n"
+                    f"Keep going — you're making history!"
+                )
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    "📖 Xatmga o'tish" if lang == "uz" else "📖 Go to Khatm",
+                    callback_data="xatm:dashboard"
+                )
+            ]])
+        else:
+            if lang == "uz":
+                text = (
+                    "👥 *Jamoaviy Xatm*\n\n"
+                    "Jamoa bilan birgalikda to'liq Qur'on xatmini amalga oshiring!\n\n"
+                    "✨ *Nima bu?*\n"
+                    "30 nafar ishtirokchi — har biri 1 pora o'qiydi.\n"
+                    "Birga 30 pora — to'liq bir xatm!\n\n"
+                    "_«Qur'on qiroati — eng yuksak ibodat.»_\n\n"
+                    "Bugun Xatmga qo'shiling!"
+                )
+            else:
+                text = (
+                    "👥 *Group Khatm*\n\n"
+                    "Complete a full Quran recitation together as a group!\n\n"
+                    "✨ *How it works:*\n"
+                    "30 participants — each reads 1 Juz.\n"
+                    "Together: a complete Khatm!\n\n"
+                    "_\"Reciting the Quran is the highest act of worship.\"_\n\n"
+                    "Join a Khatm today!"
+                )
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    "👥 Xatmga qo'shilish" if lang == "uz" else "👥 Join a Khatm",
+                    callback_data="xatm:dashboard"
+                )
+            ]])
+
+        try:
+            await bot.send_message(chat_id=user_id, text=text,
+                                   parse_mode="Markdown", reply_markup=kb)
+        except Exception as e:
+            print(f"[Scheduler] Xatm reminder failed for {user_id}: {e}")
+
+
+async def run_daily_admin_report(bot):
+    """Send daily stats summary to admin at 23:50."""
+    today = date.today().isoformat()
+    total_users = db.get_total_users()
+    active_today = db.get_active_today()
+    total_memorized = db.get_total_memorized()
+    new_today = db.get_new_users_today()
+    premium_count = db.get_premium_count()
+    xatm_stats = db.get_xatm_stats()
+    top_users = db.get_leaderboard(limit=5)
+
+    top_lines = []
+    for i, u in enumerate(top_users, 1):
+        top_lines.append(f"  {i}. {u['name']} — {u['total_xp']} XP 🔥{u['current_streak']}")
+    top_text = "\n".join(top_lines) if top_lines else "  (hali yo'q)"
+
+    report = (
+        f"📊 *Kunlik Hisobot — {today}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 *Foydalanuvchilar:*\n"
+        f"  • Jami: {total_users}\n"
+        f"  • Bugun faol: {active_today}\n"
+        f"  • Bugun yangi: {new_today}\n"
+        f"  • Premium: {premium_count}\n\n"
+        f"📖 *Yod olish:*\n"
+        f"  • Jami yod olingan oyatlar: {total_memorized}\n\n"
+        f"👥 *Jamoaviy Xatm:*\n"
+        f"  • Yakunlangan Xatmlar: {xatm_stats.get('total_xatms', 0)}\n"
+        f"  • Jami ishtirokchilar: {xatm_stats.get('total_participants', 0)}\n\n"
+        f"🏆 *Top 5 Foydalanuvchi:*\n{top_text}\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"_Hisobot avtomatik ravishda har kuni 23:50 da yuboriladi._"
+    )
+
+    try:
+        await bot.send_message(chat_id=ADMIN_ID, text=report, parse_mode="Markdown")
+    except Exception as e:
+        print(f"[Scheduler] Admin daily report failed: {e}")
+
 
 async def run_admin_decline_check(bot):
     """Check if admin sent a decline reason (stored in awaiting_input) and process it."""

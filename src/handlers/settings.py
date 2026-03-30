@@ -130,6 +130,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not settings or not settings["awaiting_input"]:
         return
 
+    # ── Tajweed surah:ayah input ───────────────────────────────────
+    from src.handlers.tajweed import handle_tajweed_text_input
+    if await handle_tajweed_text_input(update, context):
+        return
+
     text = update.message.text.strip()
     awaiting = settings["awaiting_input"]
     from src.handlers.onboarding import main_menu_keyboard

@@ -23,9 +23,9 @@ RELEASE_NOTES = (
     "_Musobaqa har dushanba yangilanadi, natijalar yakshanba kuni e'lon qilinadi._"
 )
 
-async def _send_startup_notification(bot):
+async def _send_startup_notification(app):
     try:
-        await bot.send_message(
+        await app.bot.send_message(
             chat_id=_db.ADMIN_ID,
             text=RELEASE_NOTES,
             parse_mode="Markdown"
@@ -42,8 +42,8 @@ async def main():
     init_db()
     _db.migrate_db()
 
-    # 2. Build bot application
-    app = build_app(token)
+    # 2. Build bot application (post_init sends admin startup notification)
+    app = build_app(token, post_init=_send_startup_notification)
 
     job_queue = app.job_queue
 
@@ -90,13 +90,6 @@ async def main():
         time=datetime.strptime("17:00", "%H:%M").time(),
         days=(6,),  # Sunday only
         name="weekly_announcement_job",
-    )
-
-    # 9. Startup notification to admin
-    job_queue.run_once(
-        callback=lambda ctx: asyncio.ensure_future(_send_startup_notification(ctx.bot)),
-        when=3,
-        name="startup_notify",
     )
 
     print("[Bot] Starting polling...")

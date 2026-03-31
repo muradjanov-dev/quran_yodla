@@ -102,7 +102,10 @@ async def _run_bot():
     )
 
     print("[Bot] Starting polling...")
-    await app.run_polling(allowed_updates=["message", "callback_query"])
+    async with app:
+        await app.updater.start_polling(allowed_updates=["message", "callback_query"])
+        await app.start()
+        await asyncio.Event().wait()
 
 
 async def main():

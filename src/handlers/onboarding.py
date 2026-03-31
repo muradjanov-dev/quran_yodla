@@ -1,5 +1,5 @@
 """Onboarding: /start with project intro + live stats, language picker, main menu."""
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 from src.database import db
@@ -8,27 +8,24 @@ from src.i18n.en import STRINGS as EN
 
 ADMIN_ID = db.ADMIN_ID
 
-def main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    """Shared main menu keyboard used across all handlers."""
-    prem = db.is_premium(user_id)
-    gem  = "💎 " if prem else ""
+def main_menu_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    """Persistent reply keyboard — main navigation."""
     lang = db.get_user(user_id)
     lang = lang["language"] if lang else "en"
-    surah_num  = db.get_active_surah(user_id)
-    surah_label = f"📖 Sura #{surah_num}" if lang == "uz" else f"📖 Surah #{surah_num}"
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(surah_label, callback_data="flow:dashboard")],
-        [InlineKeyboardButton(t(user_id, "btn_group_xatm"), callback_data="menu:group_xatm")],
-        [
-            InlineKeyboardButton(t(user_id, "btn_quiz"),            callback_data="menu:quiz"),
-            InlineKeyboardButton(t(user_id, "btn_profile_short"),   callback_data="menu:profile"),
-        ],
-        [
-            InlineKeyboardButton(t(user_id, "btn_leaderboard_short"), callback_data="menu:leaderboard"),
-            InlineKeyboardButton(t(user_id, "btn_settings_short"),    callback_data="menu:settings"),
-        ],
-        [InlineKeyboardButton(f"{gem}💎 Premium", callback_data="menu:premium")],
-    ])
+    if lang == "uz":
+        return ReplyKeyboardMarkup([
+            ["📗 Yodlash",       "👥 Jamoaviy Xatm"],
+            ["📊 Sahifam",       "🏆 Reyting"],
+            ["🎧 Tinglash",      "💎 Premium"],
+            ["⚙️ Sozlamalar",    "🧠 Test"],
+        ], resize_keyboard=True)
+    else:
+        return ReplyKeyboardMarkup([
+            ["📗 Learn",         "👥 Group Xatm"],
+            ["📊 Profile",       "🏆 Leaderboard"],
+            ["🎧 Listen",        "💎 Premium"],
+            ["⚙️ Settings",      "🧠 Quiz"],
+        ], resize_keyboard=True)
 
 def _build_intro_text(user_id: int) -> str:
     total_users = db.get_total_users()
@@ -155,7 +152,11 @@ async def cb_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = query.data.split(":")[1]
     user = query.from_user
     db.set_user_language(user.id, lang)
-    await query.edit_message_text(
+    try:
+        await query.delete_message()
+    except Exception:
+        pass
+    await query.message.reply_text(
         t(user.id, "welcome", name=user.first_name),
         parse_mode="Markdown",
         reply_markup=main_menu_keyboard(user.id),
@@ -181,11 +182,7 @@ async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "home":
         text = _home_text(user.id)
-        keyboard = main_menu_keyboard(user.id)
-        try:
-            await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
-        except Exception:
-            await query.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+        await query.message.reply_text(text, parse_mode="Markdown", reply_markup=main_menu_keyboard(user.id))
     elif action in ("learn", "flow"):
         # Both now go to the unified Surah Dashboard
         from src.handlers.flow import _show_surah_dashboard

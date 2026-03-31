@@ -9,7 +9,6 @@ from src.i18n import t
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
 
 def _settings_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    from src.handlers.onboarding import main_menu_keyboard
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(t(user_id, "btn_set_reminder"), callback_data="settings:reminders"),
@@ -122,21 +121,23 @@ async def cb_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(EN["choose_language"], parse_mode="Markdown", reply_markup=keyboard)
 
 _MENU_SHORTCUTS = {
-    # Uzbek
-    "yodlash": "menu:learn", "yodlash 📖": "menu:learn",
-    "jamoaviy xatm": "menu:group_xatm",
-    "sahifam": "menu:profile", "profil": "menu:profile",
-    "reyting": "menu:leaderboard",
-    "tinglash": "menu:learn",
-    "premium": "menu:premium",
-    "sozlamalar": "menu:settings",
-    "test": "menu:quiz",
+    # Uzbek (with and without emoji prefix)
+    "📗 yodlash": "menu:learn",   "yodlash": "menu:learn",
+    "👥 jamoaviy xatm": "menu:group_xatm", "jamoaviy xatm": "menu:group_xatm",
+    "📊 sahifam": "menu:profile", "sahifam": "menu:profile",
+    "🏆 reyting": "menu:leaderboard", "reyting": "menu:leaderboard",
+    "🎧 tinglash": "menu:learn",  "tinglash": "menu:learn",
+    "💎 premium": "menu:premium", "premium": "menu:premium",
+    "⚙️ sozlamalar": "menu:settings", "sozlamalar": "menu:settings",
+    "🧠 test": "menu:quiz",       "test": "menu:quiz",
     # English
-    "learn": "menu:learn", "memorize": "menu:learn",
-    "profile": "menu:profile",
-    "leaderboard": "menu:leaderboard",
-    "settings": "menu:settings",
-    "quiz": "menu:quiz",
+    "📗 learn": "menu:learn",     "learn": "menu:learn",
+    "👥 group xatm": "menu:group_xatm",
+    "📊 profile": "menu:profile", "profile": "menu:profile",
+    "🏆 leaderboard": "menu:leaderboard", "leaderboard": "menu:leaderboard",
+    "🎧 listen": "menu:learn",    "listen": "menu:learn",
+    "⚙️ settings": "menu:settings", "settings": "menu:settings",
+    "🧠 quiz": "menu:quiz",       "quiz": "menu:quiz",
 }
 
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):

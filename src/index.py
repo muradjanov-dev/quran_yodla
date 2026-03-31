@@ -3,6 +3,7 @@ import os
 import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
+from aiohttp import web
 
 load_dotenv()
 
@@ -91,6 +92,17 @@ async def main():
         days=(6,),  # Sunday only
         name="weekly_announcement_job",
     )
+
+    # Start a minimal HTTP health server so Railway healthcheck passes
+    port = int(os.environ.get("PORT", 8080))
+    health_app = web.Application()
+    health_app.router.add_get("/health", lambda r: web.Response(text="OK"))
+    health_app.router.add_get("/", lambda r: web.Response(text="OK"))
+    runner = web.AppRunner(health_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"[Health] HTTP server on port {port}")
 
     print("[Bot] Starting polling...")
     await app.run_polling(allowed_updates=["message", "callback_query"])

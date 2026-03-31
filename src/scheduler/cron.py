@@ -282,6 +282,70 @@ async def run_daily_admin_report(bot):
         print(f"[Scheduler] Admin daily report failed: {e}")
 
 
+async def run_review_reminders(bot):
+    """Once a day suggest users to replay audio of a randomly picked memorised surah."""
+    import random
+    from src.api import quran as quran_api
+
+    all_users = db.get_all_users()
+    for row in all_users:
+        user_id = row["id"]
+        lang = row.get("language", "en") if hasattr(row, "get") else dict(row).get("language", "en")
+
+        # Get all memorised ayahs grouped by surah
+        memorized = db.get_memorized_ayahs(user_id)
+        if not memorized:
+            continue
+
+        # Build {surah_number: [ayah_numbers]}
+        surah_map: dict[int, list[int]] = {}
+        for m in memorized:
+            surah_map.setdefault(m["surah_number"], []).append(m["ayah_number"])
+
+        surah_num = random.choice(list(surah_map.keys()))
+        ayah_nums = sorted(surah_map[surah_num])
+        count = len(ayah_nums)
+
+        try:
+            surah_info = await quran_api.get_surah_info(surah_num)
+            surah_name = surah_info["englishName"] if surah_info else f"Surah {surah_num}"
+            surah_name_ar = surah_info.get("name", "") if surah_info else ""
+        except Exception:
+            surah_name = f"Surah {surah_num}"
+            surah_name_ar = ""
+
+        if lang == "uz":
+            text = (
+                f"🔁 *Takrorlash vaqti!*\n\n"
+                f"Siz *{surah_name}* ({surah_name_ar}) suradan "
+                f"*{count} ta oyat* yod olgansiz.\n\n"
+                f"Ularni audio orqali eshitib, xotirangizni yangilamoqchimisiz?\n\n"
+                f"_«Qur'onni ko'p takrorlang — ko'ngildan ketmasin.»_ (Bukhoriy)"
+            )
+            btn_yes = "✅ Ha, takror qilish"
+            btn_later = "⏰ Keyinroq eslat"
+        else:
+            text = (
+                f"🔁 *Time to Review!*\n\n"
+                f"You have memorized *{count} Ayah(s)* from *{surah_name}* ({surah_name_ar}).\n\n"
+                f"Would you like to listen to them and refresh your memory?\n\n"
+                f"_\"Revise the Quran regularly — lest it escape your heart.\"_ (Bukhari)"
+            )
+            btn_yes = "✅ Yes, review now"
+            btn_later = "⏰ Remind me later"
+
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton(btn_yes, callback_data=f"review:start:{surah_num}"),
+            InlineKeyboardButton(btn_later, callback_data=f"review:later:{surah_num}"),
+        ]])
+
+        try:
+            await bot.send_message(chat_id=user_id, text=text,
+                                   parse_mode="Markdown", reply_markup=kb)
+        except Exception as e:
+            print(f"[Scheduler] Review reminder failed for {user_id}: {e}")
+
+
 async def run_admin_decline_check(bot):
     """Check if admin sent a decline reason (stored in awaiting_input) and process it."""
     # This is handled via the settings text handler — no extra job needed.

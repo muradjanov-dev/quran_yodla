@@ -496,10 +496,97 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_sess = _S(db.get_learning_session(user.id))
     await _render_state(update.message, user.id, new_sess, bot=context.bot)
 
+# ── Review reminder callbacks ─────────────────────────────────────────────────
+
+async def cb_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user = query.from_user
+    lang = _lang(user.id)
+    parts = query.data.split(":")  # review:start:{surah} or review:later:{surah}
+    action = parts[1]
+    surah = int(parts[2])
+
+    if action == "later":
+        text = (
+            "⏰ *Yaxshi! Keyinroq eslataman.*\n\n"
+            "_Takrorlash — hifzni mustahkamlashning asosi._"
+            if lang == "uz" else
+            "⏰ *Got it! I'll remind you later.*\n\n"
+            "_Regular review is the foundation of strong Hifz._"
+        )
+        try:
+            await query.edit_message_text(text, parse_mode="Markdown")
+        except Exception:
+            pass
+        return
+
+    # action == "start": send all memorized ayahs of this surah as audio
+    memorized = db.get_memorized_ayahs(user.id)
+    ayah_nums = sorted(
+        m["ayah_number"] for m in memorized if m["surah_number"] == surah
+    )
+
+    if not ayah_nums:
+        await query.edit_message_text(
+            "⚠️ Bu suradan yod olingan oyat topilmadi." if lang == "uz"
+            else "⚠️ No memorized Ayahs found for this Surah."
+        )
+        return
+
+    surah_info = await quran.get_surah_info(surah)
+    surah_name = surah_info["englishName"] if surah_info else f"Surah {surah}"
+    edition = _reciter(user.id)
+
+    if lang == "uz":
+        intro = (
+            f"🎧 *{surah_name} — {len(ayah_nums)} ta yodlangan oyat*\n\n"
+            f"Barcha audio ketma-ket yuboriladi. Tinglang va takrorlang!"
+        )
+    else:
+        intro = (
+            f"🎧 *{surah_name} — {len(ayah_nums)} memorized Ayah(s)*\n\n"
+            f"All audio will be sent in order. Listen and repeat!"
+        )
+
+    try:
+        await query.edit_message_text(intro, parse_mode="Markdown")
+    except Exception:
+        pass
+
+    # Send each ayah audio with a small delay to avoid flood limits
+    import asyncio
+    for ayah_num in ayah_nums:
+        await _send_audio(context.bot, user.id, surah, ayah_num, edition)
+        await asyncio.sleep(0.4)
+
+    # Done message
+    if lang == "uz":
+        done_text = (
+            f"✅ *{surah_name} — barcha {len(ayah_nums)} ta oyat yuborildi!*\n\n"
+            f"_JazakAllahu khairan. Davom eting!_"
+        )
+    else:
+        done_text = (
+            f"✅ *{surah_name} — all {len(ayah_nums)} Ayah(s) sent!*\n\n"
+            f"_JazakAllahu Khairan. Keep it up!_"
+        )
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "🔥 Yodlashni davom etish" if lang == "uz" else "🔥 Continue Memorizing",
+            callback_data="flow:start_flow"
+        ),
+        _home_btn(user.id),
+    ]])
+    await context.bot.send_message(chat_id=user.id, text=done_text,
+                                   parse_mode="Markdown", reply_markup=kb)
+
+
 # ── Register ──────────────────────────────────────────────────────────────────
 
 def register(app):
     app.add_handler(CommandHandler("flow",    cmd_flow))
     app.add_handler(CommandHandler("oqim",    cmd_flow))  # Uzbek alias
-    app.add_handler(CallbackQueryHandler(cb_flow,     pattern=r"^flow:"))
+    app.add_handler(CallbackQueryHandler(cb_flow,   pattern=r"^flow:"))
+    app.add_handler(CallbackQueryHandler(cb_review, pattern=r"^review:"))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))

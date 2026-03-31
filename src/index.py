@@ -10,7 +10,7 @@ load_dotenv()
 from src.database import db as _db
 from src.database.db import init_db
 from src.bot import build_app
-from src.scheduler.cron import run_reminders, run_motivations, run_xatm_reminders, run_daily_admin_report
+from src.scheduler.cron import run_reminders, run_motivations, run_xatm_reminders, run_daily_admin_report, run_review_reminders
 from src.handlers.achievements import flush_congrats_queue, run_weekly_announcement
 
 RELEASE_NOTES = (
@@ -85,7 +85,14 @@ async def main():
         name="congrats_flush_job",
     )
 
-    # 8. Weekly top-5 announcement — Sunday 22:00 Tashkent = 17:00 UTC
+    # 8. Review reminder — 15:00 Tashkent = 10:00 UTC
+    job_queue.run_daily(
+        callback=lambda ctx: asyncio.ensure_future(run_review_reminders(ctx.bot)),
+        time=datetime.strptime("10:00", "%H:%M").time(),
+        name="review_reminder_job",
+    )
+
+    # 9. Weekly top-5 announcement — Sunday 22:00 Tashkent = 17:00 UTC
     job_queue.run_daily(
         callback=lambda ctx: asyncio.ensure_future(run_weekly_announcement(ctx.bot)),
         time=datetime.strptime("17:00", "%H:%M").time(),

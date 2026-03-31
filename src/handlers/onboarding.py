@@ -140,8 +140,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except ValueError:
                 pass
 
-    # Remove any legacy reply keyboard first
-    await update.message.reply_text("\u200b", reply_markup=ReplyKeyboardRemove())
+    # Remove any legacy reply keyboard (delete the helper message immediately)
+    rm_msg = await update.message.reply_text("\u200b", reply_markup=ReplyKeyboardRemove())
+    try:
+        await rm_msg.delete()
+    except Exception:
+        pass
 
     text = _build_intro_text(user.id)
     keyboard = InlineKeyboardMarkup([

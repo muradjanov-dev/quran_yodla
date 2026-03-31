@@ -3,7 +3,7 @@ from telegram.ext import Application
 
 from src.handlers import (onboarding, profile, navigator, settings,
                           leaderboard, gamification, quiz, flow, premium, xatm)
-from src.handlers import achievements
+from src.handlers import achievements, admin
 from src.handlers import tajweed
 
 def build_app(token: str, post_init=None) -> Application:
@@ -14,6 +14,7 @@ def build_app(token: str, post_init=None) -> Application:
 
     # Order matters: specific callback handlers first, text/voice/photo last
     onboarding.register(app)     # lang:, menu: callbacks
+    admin.register(app)          # /admin command + admin: callbacks
     profile.register(app)        # profile: callbacks
     navigator.register(app)      # nav: callbacks
     leaderboard.register(app)    # lb: callbacks

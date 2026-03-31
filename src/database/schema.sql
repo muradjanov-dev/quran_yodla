@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
     name            TEXT    NOT NULL,
     language        TEXT    NOT NULL DEFAULT 'en',
     timezone        TEXT    NOT NULL DEFAULT 'Asia/Tashkent',
-    preferred_qari  TEXT    NOT NULL DEFAULT 'ar.alafasy',
+    preferred_qari  TEXT    NOT NULL DEFAULT 'ar.husarymujawwad',
     created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 

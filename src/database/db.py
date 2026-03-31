@@ -425,7 +425,7 @@ def row_dict(row) -> dict:
 def get_preferred_qari(user_id: int) -> str:
     with get_conn() as conn:
         row = conn.execute("SELECT preferred_qari FROM users WHERE id=?", (user_id,)).fetchone()
-    return (row["preferred_qari"] if row and row["preferred_qari"] else "ar.alafasy")
+    return (row["preferred_qari"] if row and row["preferred_qari"] else "ar.husarymujawwad")
 
 def set_preferred_qari(user_id: int, edition: str):
     with get_conn() as conn:
@@ -562,7 +562,7 @@ def migrate_db():
     """Add new columns / tables if they don't exist (idempotent)."""
     with get_conn() as conn:
         # preferred_qari in users
-        _try_alter(conn, "ALTER TABLE users ADD COLUMN preferred_qari TEXT NOT NULL DEFAULT 'ar.alafasy'")
+        _try_alter(conn, "ALTER TABLE users ADD COLUMN preferred_qari TEXT NOT NULL DEFAULT 'ar.husarymujawwad'")
         # active_surah in users (unified surah shared by all sections)
         _try_alter(conn, "ALTER TABLE users ADD COLUMN active_surah INTEGER NOT NULL DEFAULT 1")
         # quiz_correct_count in gamification

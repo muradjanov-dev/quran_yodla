@@ -8,18 +8,23 @@ from typing import Optional
 
 BASE = "https://api.alquran.cloud/v1"
 
-# 5 famous reciters: (display_en, display_uz, edition_id)
+# Reciters — Husary (Muallim) first as it's the default teaching reciter
+# (display_en, display_uz, edition_id)
 RECITERS = [
-    ("Mishary Al-Afasy",       "Mishary Al-Afasy",       "ar.alafasy"),
-    ("Abdul Basit (Murattal)", "Abdul Basit (Murattal)", "ar.abdulbasitmurattal"),
-    ("Maher Al-Muaiqly",       "Maher Al-Muaiqly",       "ar.mahermuaiqly"),
-    ("Minshawi (Murattal)",    "Minshawi (Murattal)",    "ar.minshawi"),
+    ("Husary (Muallim)",       "Husary (Muallim)",        "ar.husarymujawwad"),
+    ("Mishary Al-Afasy",       "Mishary Al-Afasy",        "ar.alafasy"),
+    ("Abdul Basit (Murattal)", "Abdul Basit (Murattal)",  "ar.abdulbasitmurattal"),
+    ("Maher Al-Muaiqly",       "Maher Al-Muaiqly",        "ar.mahermuaiqly"),
+    ("Minshawi (Murattal)",    "Minshawi (Murattal)",     "ar.minshawi"),
     ("Saad Al-Ghamdi",         "Saad Al-Ghamdi",          "ar.saadalghamdi"),
 ]
+
+DEFAULT_RECITER = "ar.husarymujawwad"
 
 # EveryAyah.com direct CDN — zero API limits, instant audio
 # Format: https://everyayah.com/data/{folder}/{surah:03d}{ayah:03d}.mp3
 EVERYAYAH_RECITERS: dict[str, str] = {
+    "ar.husarymujawwad":     "Husary_128kbps",
     "ar.alafasy":            "Alafasy_128kbps",
     "ar.abdulbasitmurattal": "Abdul_Basit_Murattal_192kbps",
     "ar.mahermuaiqly":       "Maher_AlMuaiqly_128kbps",
@@ -27,9 +32,9 @@ EVERYAYAH_RECITERS: dict[str, str] = {
     "ar.saadalghamdi":       "Saad_Al-Ghamdi_128kbps",
 }
 
-def get_everyayah_url(surah: int, ayah: int, edition: str = "ar.alafasy") -> str:
+def get_everyayah_url(surah: int, ayah: int, edition: str = DEFAULT_RECITER) -> str:
     """Return direct CDN MP3 URL from everyayah.com (no API, no rate limits)."""
-    folder = EVERYAYAH_RECITERS.get(edition, "Alafasy_128kbps")
+    folder = EVERYAYAH_RECITERS.get(edition, "Husary_128kbps")
     return f"https://everyayah.com/data/{folder}/{surah:03d}{ayah:03d}.mp3"
 
 # Complete Quran ayah counts (114 surahs, 1-indexed)

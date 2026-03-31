@@ -34,7 +34,8 @@ def _lang(user_id: int) -> str:
     return _S(db.get_user(user_id)).get("language", "en")
 
 def _reciter(user_id: int) -> str:
-    return _S(db.get_settings(user_id)).get("preferred_reciter") or "ar.alafasy"
+    from src.api.quran import DEFAULT_RECITER
+    return _S(db.get_settings(user_id)).get("preferred_reciter") or DEFAULT_RECITER
 
 async def _edit_or_reply(target, text: str, kb: InlineKeyboardMarkup):
     try:

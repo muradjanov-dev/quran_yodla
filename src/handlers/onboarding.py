@@ -10,7 +10,7 @@ ADMIN_ID = db.ADMIN_ID
 
 # ── Persistent bottom ReplyKeyboard ──────────────────────────────────────────
 def reply_keyboard() -> ReplyKeyboardMarkup:
-    """Persistent bottom keyboard — same for all users (Uzbek labels match old version)."""
+    """Persistent bottom keyboard — matches old version layout exactly."""
     return ReplyKeyboardMarkup(
         [
             ["📗 Yodlash"],
@@ -21,6 +21,7 @@ def reply_keyboard() -> ReplyKeyboardMarkup:
         ],
         resize_keyboard=True,
         is_persistent=True,
+        input_field_placeholder="Menyu tugmasini bosing...",
     )
 
 def main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
@@ -162,9 +163,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(EN["lang_uz"], callback_data="lang:uz"),
         ]
     ])
-    # Send the persistent bottom keyboard first so it appears immediately
-    await update.message.reply_text(".", reply_markup=reply_keyboard())
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=lang_keyboard)
+    await update.message.reply_text(text, parse_mode="Markdown",
+                                    reply_markup=reply_keyboard())
+    await update.message.reply_text("🌙", parse_mode="Markdown", reply_markup=lang_keyboard)
 
 async def cb_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -177,8 +178,12 @@ async def cb_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         reply_markup=main_menu_keyboard(user.id),
     )
-    # Ensure the persistent bottom keyboard is visible
-    await query.message.reply_text("⬇️", reply_markup=reply_keyboard())
+    # Send the bottom keyboard along with the welcome message
+    await query.message.reply_text(
+        t(user.id, "welcome", name=user.first_name),
+        parse_mode="Markdown",
+        reply_markup=reply_keyboard()
+    )
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user

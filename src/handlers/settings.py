@@ -137,9 +137,10 @@ async def _dispatch_shortcut(update, context, user_id: int, action: str):
         from src.handlers.leaderboard import _show_leaderboard
         await _show_leaderboard(msg, user_id, edit=False)
     elif action == "listen":
-        # Show reciter/surah picker — reuse the navigator start point
-        from src.handlers.navigator import cmd_start_learning
-        await cmd_start_learning(update, context)
+        # Show reciter picker for the active surah
+        from src.handlers.flow import _show_reciter_picker
+        active_surah = db.get_active_surah(user_id)
+        await _show_reciter_picker(msg, user_id, active_surah)
     elif action == "premium":
         from src.handlers.premium import _premium_text, _premium_keyboard
         await msg.reply_text(_premium_text(user_id), parse_mode="Markdown",

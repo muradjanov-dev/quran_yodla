@@ -5,7 +5,8 @@ import os
 from pathlib import Path
 from datetime import datetime, date, timedelta
 
-DB_PATH = Path(__file__).resolve().parents[2] / "hifz.db"
+_db_env = os.environ.get("DB_PATH")
+DB_PATH = Path(_db_env) if _db_env else Path(__file__).resolve().parents[2] / "hifz.db"
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
 ADMIN_ID = 917456291

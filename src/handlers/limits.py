@@ -86,6 +86,38 @@ async def check_flow_limit(update_or_query, user_id: int) -> bool:
         return False
     return True
 
+async def check_reciter_change(update_or_query, user_id: int) -> bool:
+    """Returns True if user can change reciter (premium only), False otherwise."""
+    if db.is_premium(user_id):
+        return True
+    u = db.get_user(user_id)
+    lang = u["language"] if u else "en"
+    if lang == "uz":
+        msg = (
+            "🔒 *Qori tanlash — Premium xususiyat*\n\n"
+            "Barcha foydalanuvchilar uchun standart qori:\n"
+            "🎙 *Halil Husary (Muallim)*\n\n"
+            "💎 *Premium*: 6 ta qori ichidan tanlash imkoniyati.\n"
+            "_17 000 so'm/oy — /premium_"
+        )
+    else:
+        msg = (
+            "🔒 *Reciter change — Premium feature*\n\n"
+            "Default reciter for all users:\n"
+            "🎙 *Halil Husary (Muallim)*\n\n"
+            "💎 *Premium*: Choose from 6 reciters.\n"
+            "_17,000 so'm/mo — /premium_"
+        )
+    kbd = _upgrade_keyboard(user_id)
+    try:
+        await update_or_query.edit_message_text(msg, parse_mode="Markdown", reply_markup=kbd)
+    except Exception:
+        try:
+            await update_or_query.message.reply_text(msg, parse_mode="Markdown", reply_markup=kbd)
+        except Exception:
+            await update_or_query.reply_text(msg, parse_mode="Markdown", reply_markup=kbd)
+    return False
+
 def reminder_limit(user_id: int) -> int:
     return 10 if db.is_premium(user_id) else db.FREE_REMINDERS
 

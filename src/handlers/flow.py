@@ -364,13 +364,17 @@ async def cb_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif action == "more_options":
         lang = _lang(user.id)
+        prem = db.is_premium(user.id)
         if lang == "uz":
             text = "⚙️ *Boshqa imkoniyatlar*"
             rows = [
                 [InlineKeyboardButton("📝 Shu Suradan Test",   callback_data="flow:start_quiz")],
                 [InlineKeyboardButton("📊 Statistika",          callback_data="menu:profile")],
                 [InlineKeyboardButton("🔄 Sura O'zgartirish",  callback_data="flow:change_surah")],
-                [InlineKeyboardButton("🎙 Qori O'zgartirish",  callback_data="flow:change_reciter")],
+                [InlineKeyboardButton(
+                    "🎙 Qori O'zgartirish 💎" if not prem else "🎙 Qori O'zgartirish",
+                    callback_data="flow:change_reciter"
+                )],
                 [InlineKeyboardButton("◀️ Orqaga",             callback_data="flow:dashboard")],
             ]
         else:
@@ -379,13 +383,19 @@ async def cb_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📝 Quiz From This Surah",  callback_data="flow:start_quiz")],
                 [InlineKeyboardButton("📊 Statistics",             callback_data="menu:profile")],
                 [InlineKeyboardButton("🔄 Change Surah",          callback_data="flow:change_surah")],
-                [InlineKeyboardButton("🎙 Change Reciter",        callback_data="flow:change_reciter")],
+                [InlineKeyboardButton(
+                    "🎙 Change Reciter 💎" if not prem else "🎙 Change Reciter",
+                    callback_data="flow:change_reciter"
+                )],
                 [InlineKeyboardButton("◀️ Back",                  callback_data="flow:dashboard")],
             ]
         await query.edit_message_text(text, parse_mode="Markdown",
                                       reply_markup=InlineKeyboardMarkup(rows))
 
     elif action == "change_reciter":
+        from src.handlers.limits import check_reciter_change
+        if not await check_reciter_change(query, user.id):
+            return
         surah = db.get_active_surah(user.id)
         await _show_reciter_picker(query, user.id, pending_surah=surah)
 

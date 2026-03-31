@@ -1,5 +1,5 @@
 """Onboarding: /start with project intro + live stats, language picker, main menu."""
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 from src.database import db
@@ -139,13 +139,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             except ValueError:
                 pass
-
-    # Remove any legacy reply keyboard (delete the helper message immediately)
-    rm_msg = await update.message.reply_text("\u200b", reply_markup=ReplyKeyboardRemove())
-    try:
-        await rm_msg.delete()
-    except Exception:
-        pass
 
     text = _build_intro_text(user.id)
     keyboard = InlineKeyboardMarkup([

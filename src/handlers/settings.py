@@ -121,11 +121,61 @@ async def cb_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         await query.edit_message_text(EN["choose_language"], parse_mode="Markdown", reply_markup=keyboard)
 
+_MENU_SHORTCUTS = {
+    # Uzbek
+    "yodlash": "menu:learn", "yodlash 📖": "menu:learn",
+    "jamoaviy xatm": "menu:group_xatm",
+    "sahifam": "menu:profile", "profil": "menu:profile",
+    "reyting": "menu:leaderboard",
+    "tinglash": "menu:learn",
+    "premium": "menu:premium",
+    "sozlamalar": "menu:settings",
+    "test": "menu:quiz",
+    # English
+    "learn": "menu:learn", "memorize": "menu:learn",
+    "profile": "menu:profile",
+    "leaderboard": "menu:leaderboard",
+    "settings": "menu:settings",
+    "quiz": "menu:quiz",
+}
+
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle wizard text inputs (reminders, goals, ayah numbers, quiz answers via text)."""
     user = update.effective_user
     if not db.get_user(user.id):
         return
+
+    # ── Menu shortcut buttons (reply keyboard / BotFather menu) ───────
+    raw = update.message.text.strip()
+    shortcut = _MENU_SHORTCUTS.get(raw.lower())
+    if shortcut:
+        from src.handlers.onboarding import cb_menu
+        # Fake a callback query-like dispatch via the action
+        action = shortcut.split(":")[1]
+        if action == "learn":
+            from src.handlers.flow import _show_surah_dashboard
+            await _show_surah_dashboard(update.message, user.id, edit=False)
+        elif action == "profile":
+            from src.handlers.profile import _show_profile
+            await _show_profile(update.message, user.id, edit=False)
+        elif action == "leaderboard":
+            from src.handlers.leaderboard import _show_leaderboard
+            await _show_leaderboard(update.message, user.id, edit=False)
+        elif action == "settings":
+            await _show_settings_menu(update.message, user.id, edit=False)
+        elif action == "quiz":
+            from src.handlers.quiz import _show_quiz_menu
+            await _show_quiz_menu(update.message, user.id, edit=False)
+        elif action == "group_xatm":
+            from src.handlers.xatm import _show_xatm_dashboard
+            await _show_xatm_dashboard(update.message, user.id, edit=False)
+        elif action == "premium":
+            from src.handlers.premium import _premium_text, _premium_keyboard
+            await update.message.reply_text(
+                _premium_text(user.id), parse_mode="Markdown",
+                reply_markup=_premium_keyboard(user.id))
+        return
+
     settings = db.get_settings(user.id)
     if not settings or not settings["awaiting_input"]:
         return

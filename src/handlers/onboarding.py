@@ -1,5 +1,5 @@
 """Onboarding: /start with project intro + live stats, language picker, main menu."""
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes, CommandHandler, CallbackQueryHandler
 
 from src.database import db
@@ -7,6 +7,21 @@ from src.i18n import t
 from src.i18n.en import STRINGS as EN
 
 ADMIN_ID = db.ADMIN_ID
+
+# ── Persistent bottom ReplyKeyboard ──────────────────────────────────────────
+def reply_keyboard() -> ReplyKeyboardMarkup:
+    """Persistent bottom keyboard — same for all users (Uzbek labels match old version)."""
+    return ReplyKeyboardMarkup(
+        [
+            ["📗 Yodlash"],
+            ["👥 Jamoaviy Xatm"],
+            ["📊 Sahifam",    "🏆 Reyting"],
+            ["🎧 Tinglash",   "💎 Premium"],
+            ["⚙️ Sozlamalar", "📞 Murojaat"],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
 
 def main_menu_keyboard(user_id: int) -> InlineKeyboardMarkup:
     """Shared main menu keyboard used across all handlers."""
@@ -141,13 +156,15 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
 
     text = _build_intro_text(user.id)
-    keyboard = InlineKeyboardMarkup([
+    lang_keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton(EN["lang_en"], callback_data="lang:en"),
             InlineKeyboardButton(EN["lang_uz"], callback_data="lang:uz"),
         ]
     ])
-    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=keyboard)
+    # Send the persistent bottom keyboard first so it appears immediately
+    await update.message.reply_text(".", reply_markup=reply_keyboard())
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=lang_keyboard)
 
 async def cb_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -160,6 +177,8 @@ async def cb_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown",
         reply_markup=main_menu_keyboard(user.id),
     )
+    # Ensure the persistent bottom keyboard is visible
+    await query.message.reply_text("⬇️", reply_markup=reply_keyboard())
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user

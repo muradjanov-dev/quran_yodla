@@ -121,11 +121,70 @@ async def cb_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
         await query.edit_message_text(EN["choose_language"], parse_mode="Markdown", reply_markup=keyboard)
 
+async def _dispatch_shortcut(update, context, user_id: int, action: str):
+    """Route a bottom-keyboard button tap to the correct handler."""
+    msg = update.message
+    if action == "learn":
+        from src.handlers.flow import _show_surah_dashboard
+        await _show_surah_dashboard(msg, user_id)
+    elif action == "group_xatm":
+        from src.handlers.xatm import _show_xatm_dashboard
+        await _show_xatm_dashboard(msg, user_id)
+    elif action == "profile":
+        from src.handlers.profile import _show_profile
+        await _show_profile(msg, user_id, edit=False)
+    elif action == "leaderboard":
+        from src.handlers.leaderboard import _show_leaderboard
+        await _show_leaderboard(msg, user_id, edit=False)
+    elif action == "listen":
+        # Show reciter/surah picker — reuse the navigator start point
+        from src.handlers.navigator import cmd_start_learning
+        await cmd_start_learning(update, context)
+    elif action == "premium":
+        from src.handlers.premium import _premium_text, _premium_keyboard
+        await msg.reply_text(_premium_text(user_id), parse_mode="Markdown",
+                             reply_markup=_premium_keyboard(user_id))
+    elif action == "settings":
+        await _show_settings_menu(msg, user_id, edit=False)
+    elif action == "contact":
+        lang = db.get_user(user_id)
+        lang = lang["language"] if lang else "en"
+        if lang == "uz":
+            text = "📞 *Murojaat*\n\nSavolingiz yoki taklifingiz bo'lsa admin bilan bog'laning: @hifzbot_admin"
+        else:
+            text = "📞 *Contact*\n\nFor questions or suggestions, reach the admin: @hifzbot_admin"
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        await msg.reply_text(text, parse_mode="Markdown",
+                             reply_markup=InlineKeyboardMarkup([[
+                                 InlineKeyboardButton("◀️ Orqaga", callback_data="menu:home")
+                             ]]))
+
+
+# ── Bottom ReplyKeyboard shortcuts ───────────────────────────────────────────
+_MENU_SHORTCUTS = {
+    "📗 Yodlash":        "learn",
+    "👥 Jamoaviy Xatm":  "group_xatm",
+    "📊 Sahifam":        "profile",
+    "🏆 Reyting":        "leaderboard",
+    "🎧 Tinglash":       "listen",
+    "💎 Premium":        "premium",
+    "⚙️ Sozlamalar":     "settings",
+    "📞 Murojaat":       "contact",
+}
+
 async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle wizard text inputs (reminders, goals, ayah numbers, quiz answers via text)."""
     user = update.effective_user
     if not db.get_user(user.id):
         return
+
+    # ── Bottom keyboard button taps ───────────────────────────────────────────
+    raw = update.message.text.strip()
+    shortcut = _MENU_SHORTCUTS.get(raw)
+    if shortcut:
+        await _dispatch_shortcut(update, context, user.id, shortcut)
+        return
+
     settings = db.get_settings(user.id)
     if not settings or not settings["awaiting_input"]:
         return

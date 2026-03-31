@@ -224,9 +224,11 @@ async def _send_congrats_notification(recipient_id: int, item: dict, bot):
 
 
 async def cb_congrats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler: user taps Congratulate button."""
+    """Handler: user taps Congratulate button — sends fireworks to achiever + confirms to tapper."""
     query = update.callback_query
-    await query.answer()
+    # Show fireworks animation to the tapper immediately via answer()
+    await query.answer(text="🎆🎇✨ Tabrik yuborildi!", show_alert=False)
+
     parts = query.data.split(":")
     if len(parts) < 4:
         return
@@ -238,15 +240,23 @@ async def cb_congrats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name_uz, name_en = _ach_names(ach_id)
     ach_name = name_uz if lang_achiever == "uz" else name_en
 
+    # ── Fireworks message to the achiever ──────────────────────────────────────
+    fireworks = "🎆🎇🎉🎊✨🌟🏆🎆🎇🎉"
     if lang_achiever == "uz":
         msg = (
-            f"🤝 *{sender_name}* seni *{ach_name}* yutuqqa erishganingiz bilan tabrikladi!\n\n"
-            f"_Xayrli va bardavom bo'lsin. Alloh muvaffaqiyat bersin!_ 🌙"
+            f"{fireworks}\n\n"
+            f"🤝 *{sender_name}* seni tabrikladingiz!\n\n"
+            f"🏆 *{ach_name}* yutuqqa erishganingiz uchun!\n\n"
+            f"_Xayrli va bardavom bo'lsin. Alloh muvaffaqiyat bersin!_ 🌙\n\n"
+            f"{fireworks}"
         )
     else:
         msg = (
-            f"🤝 *{sender_name}* congratulated you on your *{ach_name}* achievement!\n\n"
-            f"_May it be blessed and lasting. May Allah grant you continued success!_ 🌙"
+            f"{fireworks}\n\n"
+            f"🤝 *{sender_name}* just congratulated you!\n\n"
+            f"🏆 For earning the *{ach_name}* achievement!\n\n"
+            f"_May it be blessed and lasting. May Allah grant you continued success!_ 🌙\n\n"
+            f"{fireworks}"
         )
 
     try:
@@ -254,9 +264,12 @@ async def cb_congrats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-    # Confirm to the tapper
+    # ── Remove the button so it can't be tapped again + confirm to tapper ─────
     lang_sender = _lang(sender_id)
-    confirm = "✅ Tabrik yuborildi!" if lang_sender == "uz" else "✅ Congratulations sent!"
+    if lang_sender == "uz":
+        confirm = "🎆 Tabrikingiz yuborildi! Alloh barakot bersin."
+    else:
+        confirm = "🎆 Your congratulations was sent! Barakallah."
     try:
         await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text(confirm)

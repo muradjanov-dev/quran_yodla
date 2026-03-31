@@ -59,8 +59,8 @@ async def _run_bot():
     init_db()
     _db.migrate_db()
 
-    # 2. Build bot application (post_init sends admin startup notification)
-    app = build_app(token, post_init=_send_startup_notification)
+    # 2. Build bot application
+    app = build_app(token)
 
     job_queue = app.job_queue
 
@@ -105,6 +105,7 @@ async def _run_bot():
     async with app:
         await app.updater.start_polling(allowed_updates=["message", "callback_query"])
         await app.start()
+        await _send_startup_notification(app)
         await asyncio.Event().wait()
 
 

@@ -149,12 +149,10 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw = update.message.text.strip()
     shortcut = _MENU_SHORTCUTS.get(raw.lower())
     if shortcut:
-        from src.handlers.onboarding import cb_menu
-        # Fake a callback query-like dispatch via the action
         action = shortcut.split(":")[1]
         if action == "learn":
             from src.handlers.flow import _show_surah_dashboard
-            await _show_surah_dashboard(update.message, user.id, edit=False)
+            await _show_surah_dashboard(update.message, user.id)
         elif action == "profile":
             from src.handlers.profile import _show_profile
             await _show_profile(update.message, user.id, edit=False)
@@ -165,10 +163,10 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await _show_settings_menu(update.message, user.id, edit=False)
         elif action == "quiz":
             from src.handlers.quiz import _show_quiz_menu
-            await _show_quiz_menu(update.message, user.id, edit=False)
+            await _show_quiz_menu(update.message, user.id)
         elif action == "group_xatm":
             from src.handlers.xatm import _show_xatm_dashboard
-            await _show_xatm_dashboard(update.message, user.id, edit=False)
+            await _show_xatm_dashboard(update.message, user.id)
         elif action == "premium":
             from src.handlers.premium import _premium_text, _premium_keyboard
             await update.message.reply_text(

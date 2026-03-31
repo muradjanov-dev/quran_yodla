@@ -560,6 +560,9 @@ async def cb_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _send_audio(context.bot, user.id, surah, ayah_num, edition)
         await asyncio.sleep(0.4)
 
+    # Mark all ayahs in this surah as reviewed now so next reminder moves to next surah
+    db.update_last_reviewed_surah(user.id, surah)
+
     # Done message
     if lang == "uz":
         done_text = (

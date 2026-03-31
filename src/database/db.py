@@ -528,6 +528,34 @@ def get_memorized_ayahs(user_id: int) -> list[dict]:
         ).fetchall()
     return [dict(r) for r in rows]
 
+def get_memorized_surahs_by_review_age(user_id: int) -> list[dict]:
+    """
+    Return memorized surahs ordered by least recently reviewed first.
+    NULLs (never reviewed) come first, then oldest last_reviewed timestamp.
+    Each row: {surah_number, ayah_count, oldest_reviewed}
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT surah_number, COUNT(*) AS ayah_count, "
+            "  MIN(COALESCE(last_reviewed, '1970-01-01')) AS oldest_reviewed "
+            "FROM progress "
+            "WHERE user_id=? AND memorized=1 "
+            "GROUP BY surah_number "
+            "ORDER BY oldest_reviewed ASC",
+            (user_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+def update_last_reviewed_surah(user_id: int, surah_number: int):
+    """Mark all memorized ayahs in a surah as reviewed now."""
+    now = datetime.utcnow().isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE progress SET last_reviewed=? "
+            "WHERE user_id=? AND surah_number=? AND memorized=1",
+            (now, user_id, surah_number)
+        )
+
 # ── DB Migration (safe column additions) ─────────────────────────────────────
 def migrate_db():
     """Add new columns / tables if they don't exist (idempotent)."""

@@ -283,8 +283,7 @@ async def run_daily_admin_report(bot):
 
 
 async def run_review_reminders(bot):
-    """Once a day suggest users to replay audio of a randomly picked memorised surah."""
-    import random
+    """Once a day suggest users to replay audio of their least-recently-reviewed surah."""
     from src.api import quran as quran_api
 
     all_users = db.get_all_users()
@@ -292,19 +291,18 @@ async def run_review_reminders(bot):
         user_id = row["id"]
         lang = row.get("language", "en") if hasattr(row, "get") else dict(row).get("language", "en")
 
-        # Get all memorised ayahs grouped by surah
-        memorized = db.get_memorized_ayahs(user_id)
-        if not memorized:
+        # Surahs sorted by oldest last_reviewed first (NULLs = never reviewed = top priority)
+        surahs = db.get_memorized_surahs_by_review_age(user_id)
+        if not surahs:
             continue
 
-        # Build {surah_number: [ayah_numbers]}
-        surah_map: dict[int, list[int]] = {}
-        for m in memorized:
-            surah_map.setdefault(m["surah_number"], []).append(m["ayah_number"])
+        # Pick the top (oldest/never reviewed) surah
+        top = surahs[0]
+        surah_num = top["surah_number"]
+        count = top["ayah_count"]
+        oldest = top["oldest_reviewed"]
 
-        surah_num = random.choice(list(surah_map.keys()))
-        ayah_nums = sorted(surah_map[surah_num])
-        count = len(ayah_nums)
+        never_reviewed = oldest.startswith("1970-01-01")
 
         try:
             surah_info = await quran_api.get_surah_info(surah_num)
@@ -315,19 +313,25 @@ async def run_review_reminders(bot):
             surah_name_ar = ""
 
         if lang == "uz":
+            age_note = "_(Hali hech qachon takrorlanmagan!)_" if never_reviewed \
+                else f"_(Oxirgi takrorlash: {oldest[:10]})_"
             text = (
                 f"🔁 *Takrorlash vaqti!*\n\n"
                 f"Siz *{surah_name}* ({surah_name_ar}) suradan "
-                f"*{count} ta oyat* yod olgansiz.\n\n"
+                f"*{count} ta oyat* yod olgansiz.\n"
+                f"{age_note}\n\n"
                 f"Ularni audio orqali eshitib, xotirangizni yangilamoqchimisiz?\n\n"
                 f"_«Qur'onni ko'p takrorlang — ko'ngildan ketmasin.»_ (Bukhoriy)"
             )
             btn_yes = "✅ Ha, takror qilish"
             btn_later = "⏰ Keyinroq eslat"
         else:
+            age_note = "_(Never reviewed before!)_" if never_reviewed \
+                else f"_(Last reviewed: {oldest[:10]})_"
             text = (
                 f"🔁 *Time to Review!*\n\n"
-                f"You have memorized *{count} Ayah(s)* from *{surah_name}* ({surah_name_ar}).\n\n"
+                f"You have memorized *{count} Ayah(s)* from *{surah_name}* ({surah_name_ar}).\n"
+                f"{age_note}\n\n"
                 f"Would you like to listen to them and refresh your memory?\n\n"
                 f"_\"Revise the Quran regularly — lest it escape your heart.\"_ (Bukhari)"
             )

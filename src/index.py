@@ -34,7 +34,23 @@ async def _send_startup_notification(app):
     except Exception as e:
         print(f"[Startup] Admin notify failed: {e}")
 
-async def main():
+async def _run_health_server():
+    """Minimal HTTP server for Railway healthcheck — runs forever."""
+    port = int(os.environ.get("PORT", 8080))
+    health_app = web.Application()
+    health_app.router.add_get("/health", lambda r: web.Response(text="OK"))
+    health_app.router.add_get("/",       lambda r: web.Response(text="OK"))
+    runner = web.AppRunner(health_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    print(f"[Health] HTTP server listening on port {port}")
+    # Keep running forever alongside the bot
+    while True:
+        await asyncio.sleep(3600)
+
+
+async def _run_bot():
     token = os.environ.get("BOT_TOKEN")
     if not token:
         raise RuntimeError("BOT_TOKEN is not set in .env")
@@ -51,68 +67,49 @@ async def main():
     # 3. Reminder job: every 60 seconds, matches HH:MM to users' reminder times
     job_queue.run_repeating(
         callback=lambda ctx: asyncio.ensure_future(run_reminders(ctx.bot)),
-        interval=60,
-        first=5,
-        name="reminder_job",
+        interval=60, first=5, name="reminder_job",
     )
-
-    # 4. Daily motivation for inactive users (09:00 Tashkent = 04:00 UTC)
+    # 4. Daily motivation — 09:00 Tashkent = 04:00 UTC
     job_queue.run_daily(
         callback=lambda ctx: asyncio.ensure_future(run_motivations(ctx.bot)),
-        time=datetime.strptime("04:00", "%H:%M").time(),
-        name="motivation_job",
+        time=datetime.strptime("04:00", "%H:%M").time(), name="motivation_job",
     )
-
-    # 5. Daily Xatm reminder (10:00 Tashkent = 05:00 UTC)
+    # 5. Xatm reminder — 10:00 Tashkent = 05:00 UTC
     job_queue.run_daily(
         callback=lambda ctx: asyncio.ensure_future(run_xatm_reminders(ctx.bot)),
-        time=datetime.strptime("05:00", "%H:%M").time(),
-        name="xatm_reminder_job",
+        time=datetime.strptime("05:00", "%H:%M").time(), name="xatm_reminder_job",
     )
-
-    # 6. Admin daily stats report at 23:50 Tashkent = 18:50 UTC
+    # 6. Admin daily report — 23:50 Tashkent = 18:50 UTC
     job_queue.run_daily(
         callback=lambda ctx: asyncio.ensure_future(run_daily_admin_report(ctx.bot)),
-        time=datetime.strptime("18:50", "%H:%M").time(),
-        name="admin_report_job",
+        time=datetime.strptime("18:50", "%H:%M").time(), name="admin_report_job",
     )
-
-    # 7. Congrats queue flush — every 30 minutes
+    # 7. Congrats flush — every 30 minutes
     job_queue.run_repeating(
         callback=lambda ctx: asyncio.ensure_future(flush_congrats_queue(ctx.bot)),
-        interval=1800,
-        first=30,
-        name="congrats_flush_job",
+        interval=1800, first=30, name="congrats_flush_job",
     )
-
     # 8. Review reminder — 15:00 Tashkent = 10:00 UTC
     job_queue.run_daily(
         callback=lambda ctx: asyncio.ensure_future(run_review_reminders(ctx.bot)),
-        time=datetime.strptime("10:00", "%H:%M").time(),
-        name="review_reminder_job",
+        time=datetime.strptime("10:00", "%H:%M").time(), name="review_reminder_job",
     )
-
-    # 9. Weekly top-5 announcement — Sunday 22:00 Tashkent = 17:00 UTC
+    # 9. Weekly top-5 — Sunday 22:00 Tashkent = 17:00 UTC
     job_queue.run_daily(
         callback=lambda ctx: asyncio.ensure_future(run_weekly_announcement(ctx.bot)),
-        time=datetime.strptime("17:00", "%H:%M").time(),
-        days=(6,),  # Sunday only
+        time=datetime.strptime("17:00", "%H:%M").time(), days=(6,),
         name="weekly_announcement_job",
     )
 
-    # Start a minimal HTTP health server so Railway healthcheck passes
-    port = int(os.environ.get("PORT", 8080))
-    health_app = web.Application()
-    health_app.router.add_get("/health", lambda r: web.Response(text="OK"))
-    health_app.router.add_get("/", lambda r: web.Response(text="OK"))
-    runner = web.AppRunner(health_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    print(f"[Health] HTTP server on port {port}")
-
     print("[Bot] Starting polling...")
     await app.run_polling(allowed_updates=["message", "callback_query"])
+
+
+async def main():
+    await asyncio.gather(
+        _run_health_server(),
+        _run_bot(),
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())

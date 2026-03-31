@@ -73,29 +73,23 @@ async def _show_surah_dashboard(target, user_id: int):
 
     if lang == "uz":
         text = (
-            f"📖 *{surah_name}* ({surah}-sura)\n"
+            f"📗 *{surah_name}* ({surah}-sura)\n"
             f"{bar} {pct}% yodlandi — {done}/{total_ayahs} oyat\n"
             f"🔥 {streak} kunlik seriya  ⭐ {xp} XP"
         )
         rows = [
-            [InlineKeyboardButton("🔥 3-7-11 Oqimni Boshlash", callback_data="flow:start_flow")],
-            [InlineKeyboardButton("📝 Shu Suradan Test",       callback_data="flow:start_quiz")],
-            [InlineKeyboardButton("📊 Statistika",              callback_data="menu:profile")],
-            [InlineKeyboardButton("🔄 Sura O'zgartirish",      callback_data="flow:change_surah")],
-            [_home_btn(user_id)],
+            [InlineKeyboardButton("📗 Yodlashni Boshlash", callback_data="flow:start_flow")],
+            [InlineKeyboardButton("⚙️ Boshqa imkoniyatlar ›", callback_data="flow:more_options")],
         ]
     else:
         text = (
-            f"📖 *{surah_name}* (Surah {surah})\n"
+            f"📗 *{surah_name}* (Surah {surah})\n"
             f"{bar} {pct}% memorized — {done}/{total_ayahs} Ayahs\n"
             f"🔥 {streak} day streak  ⭐ {xp} XP"
         )
         rows = [
-            [InlineKeyboardButton("🔥 Start 3-7-11 Flow",      callback_data="flow:start_flow")],
-            [InlineKeyboardButton("📝 Quiz From This Surah",    callback_data="flow:start_quiz")],
-            [InlineKeyboardButton("📊 Statistics",              callback_data="menu:profile")],
-            [InlineKeyboardButton("🔄 Change Surah",           callback_data="flow:change_surah")],
-            [_home_btn(user_id)],
+            [InlineKeyboardButton("📗 Start Memorizing", callback_data="flow:start_flow")],
+            [InlineKeyboardButton("⚙️ More options ›", callback_data="flow:more_options")],
         ]
     await _edit_or_reply(target, text, InlineKeyboardMarkup(rows))
 
@@ -367,6 +361,33 @@ async def cb_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "dashboard":
         await _show_surah_dashboard(query, user.id)
+
+    elif action == "more_options":
+        lang = _lang(user.id)
+        if lang == "uz":
+            text = "⚙️ *Boshqa imkoniyatlar*"
+            rows = [
+                [InlineKeyboardButton("📝 Shu Suradan Test",   callback_data="flow:start_quiz")],
+                [InlineKeyboardButton("📊 Statistika",          callback_data="menu:profile")],
+                [InlineKeyboardButton("🔄 Sura O'zgartirish",  callback_data="flow:change_surah")],
+                [InlineKeyboardButton("🎙 Qori O'zgartirish",  callback_data="flow:change_reciter")],
+                [InlineKeyboardButton("◀️ Orqaga",             callback_data="flow:dashboard")],
+            ]
+        else:
+            text = "⚙️ *More options*"
+            rows = [
+                [InlineKeyboardButton("📝 Quiz From This Surah",  callback_data="flow:start_quiz")],
+                [InlineKeyboardButton("📊 Statistics",             callback_data="menu:profile")],
+                [InlineKeyboardButton("🔄 Change Surah",          callback_data="flow:change_surah")],
+                [InlineKeyboardButton("🎙 Change Reciter",        callback_data="flow:change_reciter")],
+                [InlineKeyboardButton("◀️ Back",                  callback_data="flow:dashboard")],
+            ]
+        await query.edit_message_text(text, parse_mode="Markdown",
+                                      reply_markup=InlineKeyboardMarkup(rows))
+
+    elif action == "change_reciter":
+        surah = db.get_active_surah(user.id)
+        await _show_reciter_picker(query, user.id, pending_surah=surah)
 
     elif action == "change_surah":
         await _show_surah_picker(query, user.id, page=0)

@@ -118,13 +118,16 @@ def update_user(telegram_id: int, fields: dict):
 def save_memorization_progress(user_id: int, surah_number: int, surah_name: str,
                                 next_ayah: int):
     """Save the user's last memorized position so they can resume later."""
-    update_user(user_id, {
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    fields = {
         "memorization_progress.current_surah": surah_number,
         "memorization_progress.current_surah_name": surah_name,
         "memorization_progress.current_ayah": next_ayah,
-        # Per-surah key so any surah can be resumed independently
         f"memorization_progress.surah_{surah_number}_ayah": next_ayah,
-    })
+    }
+    _log.info(f"save_memorization_progress user={user_id} surah={surah_number} next_ayah={next_ayah}")
+    update_user(user_id, fields)
 
 
 def get_memorization_progress(user_id: int) -> dict:

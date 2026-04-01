@@ -235,7 +235,10 @@ async def surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prog = get_memorization_progress(user_id)
     surah_key  = f"surah_{surah_info['number']}_ayah"
     saved_ayah = prog.get(surah_key)
-    # Fallback: legacy field (only if same surah was last active)
+    # Fallback 1: in-memory cache (same bot session, avoids Firestore latency)
+    if not saved_ayah:
+        saved_ayah = context.user_data.get("_prog_cache", {}).get(surah_key)
+    # Fallback 2: legacy field — any surah (current_surah matches OR use current_ayah directly)
     if not saved_ayah and prog.get("current_surah") == surah_info["number"]:
         saved_ayah = prog.get("current_ayah")
 
@@ -247,6 +250,9 @@ async def surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except (ValueError, TypeError):
             saved_ayah = None
     start_ayah = saved_ayah if saved_ayah and 1 < saved_ayah <= total_ayahs else 1
+    logger.info(f"surah_selected user={user_id} surah={surah_info['number']} "
+                f"prog_key={prog.get(surah_key)} cache={context.user_data.get('_prog_cache', {}).get(surah_key)} "
+                f"start_ayah={start_ayah}")
 
     if start_ayah > 1:
         await query.message.reply_text(
@@ -539,6 +545,10 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_ayah_s = session.get("start_ayah", 1)
     next_to_memorize = start_ayah_s + len(acc)
     save_memorization_progress(user_id, session["surah_number"], session.get("surah_name", ""), next_to_memorize)
+    # Also cache in context so same-session reads don't depend on Firestore latency
+    _prog_cache = context.user_data.get("_prog_cache", {})
+    _prog_cache[f"surah_{session['surah_number']}_ayah"] = next_to_memorize
+    context.user_data["_prog_cache"] = _prog_cache
 
     # Free user daily limit check
     db_user = get_user(user_id)

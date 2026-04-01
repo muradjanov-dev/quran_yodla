@@ -67,6 +67,9 @@ def juz_selection_keyboard(has_active_session: bool = False) -> InlineKeyboardMa
     if has_active_session:
         buttons.append([InlineKeyboardButton("▶️ Davom etish", callback_data="memo_continue")])
 
+    # Direct surah browse button
+    buttons.append([InlineKeyboardButton("📋 Surani to'g'ridan-to'g'ri tanlash", callback_data="memo_by_surah")])
+
     row = []
     for juz in range(1, 31):
         row.append(InlineKeyboardButton(f"{juz}-juz", callback_data=f"juz_{juz}"))
@@ -75,6 +78,45 @@ def juz_selection_keyboard(has_active_session: bool = False) -> InlineKeyboardMa
             row = []
     if row:
         buttons.append(row)
+    return InlineKeyboardMarkup(buttons)
+
+
+def all_surahs_keyboard(page: int = 0, prog: dict = None) -> InlineKeyboardMarkup:
+    """
+    Show all 114 surahs paginated (10 per page).
+    prog: memorization_progress dict — used to show resume indicator.
+    """
+    from utils.helpers import load_surahs
+    surahs = load_surahs()
+    prog = prog or {}
+    page_size = 10
+    total = len(surahs)
+    start = page * page_size
+    end   = min(start + page_size, total)
+
+    buttons = []
+    for s in surahs[start:end]:
+        snum = s["number"]
+        saved_ayah = prog.get(f"surah_{snum}_ayah")
+        # Fallback for legacy field
+        if not saved_ayah and prog.get("current_surah") == snum:
+            saved_ayah = prog.get("current_ayah")
+        if saved_ayah and int(saved_ayah) > 1:
+            label = f"▶️ {snum}. {s['name']} ({saved_ayah}-oyatdan)"
+        else:
+            label = f"{snum}. {s['name']} ({s['ayah_count']} oyat)"
+        buttons.append([InlineKeyboardButton(label, callback_data=f"surah_{snum}")])
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️ Oldingi", callback_data=f"all_surahs_p_{page - 1}"))
+    nav.append(InlineKeyboardButton(f"{page + 1}/{(total - 1) // page_size + 1}", callback_data="noop"))
+    if end < total:
+        nav.append(InlineKeyboardButton("Keyingi ➡️", callback_data=f"all_surahs_p_{page + 1}"))
+    if nav:
+        buttons.append(nav)
+
+    buttons.append([InlineKeyboardButton("↩️ Juz tanlashga qaytish", callback_data="memo_back_juz")])
     return InlineKeyboardMarkup(buttons)
 
 

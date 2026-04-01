@@ -13,7 +13,8 @@ from telegram.constants import ParseMode
 from config import (
     MEMO_SELECT_JUZ, MEMO_SELECT_DIRECTION, MEMO_SELECT_RECITER,
     MEMO_SELECT_SURAH, MEMO_IN_PROGRESS, MEMO_REP_3, MEMO_REP_7,
-    MEMO_REP_11, MEMO_ACCUMULATION, MEMO_ACC_7, DAILY_FREE_LIMIT
+    MEMO_REP_11, MEMO_ACCUMULATION, MEMO_ACC_7, DAILY_FREE_LIMIT,
+    MEMO_SELECT_SURAH_DIRECT,
 )
 from services.firebase_service import (
     get_user, get_active_session, create_session, update_session, close_session,
@@ -30,8 +31,8 @@ from services.gamification import (
 from services.premium_service import is_premium
 from utils.keyboards import (
     juz_selection_keyboard, direction_keyboard, reciter_keyboard,
-    surah_selection_keyboard, repetition_keyboard, accumulation_keyboard,
-    checkpoint_keyboard, limit_reached_keyboard, open_memorize_keyboard
+    surah_selection_keyboard, all_surahs_keyboard, repetition_keyboard,
+    accumulation_keyboard, checkpoint_keyboard, limit_reached_keyboard,
 )
 from utils.messages import (
     ayah_header, ayah_text_message, rep_instruction, accumulation_message,
@@ -107,6 +108,15 @@ async def juz_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=juz_selection_keyboard()
         )
         return MEMO_SELECT_JUZ
+
+    if data == "memo_by_surah":
+        prog = get_memorization_progress(user_id)
+        await query.message.reply_text(
+            "📋 Qaysi surani yodlamoqchisiz?\n\n"
+            "▶️ belgisi — oxirgi to'xtagan oyatingiz bor:",
+            reply_markup=all_surahs_keyboard(page=0, prog=prog)
+        )
+        return MEMO_SELECT_SURAH_DIRECT
 
     juz_number = int(data.split("_")[1])
     context.user_data["juz_number"] = juz_number
@@ -658,6 +668,31 @@ async def checkpoint_save_exit(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 
+async def all_surahs_paginate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle pagination in the all-surahs browser."""
+    query = update.callback_query
+    await query.answer()
+    page = int(query.data.split("_")[-1])
+    prog = get_memorization_progress(query.from_user.id)
+    await query.message.edit_reply_markup(
+        reply_markup=all_surahs_keyboard(page=page, prog=prog)
+    )
+    return MEMO_SELECT_SURAH_DIRECT
+
+
+async def back_to_juz(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Go back to juz selection from all-surahs view."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    active  = get_active_session(user_id)
+    await query.message.edit_text(
+        "📗 YODLASH\n\nQaysi juzdan boshlashni tanlang:",
+        reply_markup=juz_selection_keyboard(has_active_session=bool(active))
+    )
+    return MEMO_SELECT_JUZ
+
+
 async def _handle_surah_complete(chat_id: int, context, user_id: int, session: dict, surah_info: dict):
     himmat = points_for_surah_complete(surah_info["ayah_count"])
     level_up = award_points(user_id, himmat, "surah_complete")
@@ -713,7 +748,7 @@ def build_memorize_handler() -> ConversationHandler:
         ],
         states={
             MEMO_SELECT_JUZ: [
-                CallbackQueryHandler(juz_selected, pattern="^(juz_|memo_continue)"),
+                CallbackQueryHandler(juz_selected, pattern="^(juz_|memo_continue|memo_by_surah)"),
             ],
             MEMO_SELECT_DIRECTION: [
                 CallbackQueryHandler(direction_selected, pattern="^dir_"),
@@ -723,6 +758,11 @@ def build_memorize_handler() -> ConversationHandler:
             ],
             MEMO_SELECT_SURAH: [
                 CallbackQueryHandler(surah_selected, pattern="^surah_"),
+            ],
+            MEMO_SELECT_SURAH_DIRECT: [
+                CallbackQueryHandler(surah_selected,      pattern="^surah_\\d+$"),
+                CallbackQueryHandler(all_surahs_paginate, pattern="^all_surahs_p_\\d+$"),
+                CallbackQueryHandler(back_to_juz,         pattern="^memo_back_juz$"),
             ],
             MEMO_REP_3: [
                 CallbackQueryHandler(rep_3_done, pattern="^rep_done_3$"),

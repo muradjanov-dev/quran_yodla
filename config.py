@@ -84,16 +84,17 @@ ONBOARDING_GOAL     = 5
 ONBOARDING_TIME     = 6
 
 # Memorize
-MEMO_SELECT_JUZ       = 10
-MEMO_SELECT_DIRECTION = 11
-MEMO_SELECT_RECITER   = 12
-MEMO_SELECT_SURAH     = 13
-MEMO_IN_PROGRESS      = 14
-MEMO_REP_3            = 15
-MEMO_REP_7            = 16
-MEMO_REP_11           = 17
-MEMO_ACCUMULATION     = 18
-MEMO_ACC_7            = 19
+MEMO_SELECT_JUZ           = 10
+MEMO_SELECT_DIRECTION     = 11
+MEMO_SELECT_RECITER       = 12
+MEMO_SELECT_SURAH         = 13
+MEMO_IN_PROGRESS          = 14
+MEMO_REP_3                = 15
+MEMO_REP_7                = 16
+MEMO_REP_11               = 17
+MEMO_ACCUMULATION         = 18
+MEMO_ACC_7                = 19
+MEMO_SELECT_SURAH_DIRECT  = 25  # Browse all surahs by name
 
 # Admin
 ADMIN_BROADCAST      = 20

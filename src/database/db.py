@@ -630,6 +630,19 @@ def migrate_db():
             CREATE INDEX IF NOT EXISTS idx_congrats_recipient ON congrats_queue(recipient_id, sent);
         """)
 
+        # Reset any user stuck on old al-afasy default → Husary
+        conn.execute(
+            "UPDATE users SET preferred_qari='ar.husarymujawwad' "
+            "WHERE preferred_qari='ar.alafasy' OR preferred_qari IS NULL"
+        )
+        try:
+            conn.execute(
+                "UPDATE settings SET preferred_reciter='ar.husarymujawwad' "
+                "WHERE preferred_reciter='ar.alafasy' OR preferred_reciter IS NULL"
+            )
+        except Exception:
+            pass  # column may not exist in older schema versions
+
 def _try_alter(conn, sql: str):
     try:
         conn.execute(sql)

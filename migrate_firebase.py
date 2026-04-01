@@ -15,7 +15,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-print("[Migrate] Starting Firebase → SQLite migration...")
+print("[Migrate] Starting Firebase -> SQLite migration...")
 
 # ── Init SQLite ────────────────────────────────────────────────────────────────
 _db_env = os.environ.get("DB_PATH")

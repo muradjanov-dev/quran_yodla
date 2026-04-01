@@ -47,3 +47,5 @@ railway.json
 # OS
 .DS_Store
 Thumbs.db
+check_photos.py
+run_migration.py

@@ -59,6 +59,17 @@ async def _run_bot():
     init_db()
     _db.migrate_db()
 
+    # 1b. One-time Firebase -> SQLite migration (runs only if FIREBASE_CREDENTIALS set
+    #     AND users table is empty — safe to leave enabled permanently)
+    if os.environ.get("FIREBASE_CREDENTIALS") and _db.get_total_users() == 0:
+        print("[Startup] Empty DB + Firebase creds found — running auto-migration...")
+        try:
+            import runpy
+            runpy.run_path("migrate_firebase.py", run_name="__main__")
+            print("[Startup] Auto-migration complete.")
+        except Exception as e:
+            print(f"[Startup] Auto-migration failed: {e}")
+
     # 2. Build bot application
     app = build_app(token)
 

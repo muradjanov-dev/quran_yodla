@@ -170,6 +170,7 @@ def profile_period_keyboard(active: str = "today") -> InlineKeyboardMarkup:
         row.append(InlineKeyboardButton(text, callback_data=f"profile_period_{key}"))
     return InlineKeyboardMarkup([
         row,
+        [InlineKeyboardButton("🏆 Yutuq va Mukofotlarim", callback_data="achievements_show")],
         [
             InlineKeyboardButton("📤 Natijani ulashish", callback_data="profile_share"),
             InlineKeyboardButton("⚙️ Sozlamalar",         callback_data="profile_settings"),

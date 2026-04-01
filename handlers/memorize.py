@@ -39,6 +39,7 @@ from utils.messages import (
     level_up_message, ayah_progress_message
 )
 from utils.helpers import get_surahs_in_juz, get_surah_by_number, get_next_surah_in_juz
+from handlers.achievements import check_and_notify_achievements
 
 logger = logging.getLogger(__name__)
 
@@ -487,6 +488,10 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if first_ayah_bonus:
         await context.bot.send_message(chat_id, f"🌟 BIRINCHI OYAT! +25 Himmat ball! Tabriklaymiz!")
 
+    # Check and broadcast achievements after each ayah
+    import asyncio
+    asyncio.ensure_future(check_and_notify_achievements(context.bot, user_id))
+
     # Add to accumulated ayahs list
     current_ayah = session.get("current_ayah_data", {})
     acc = session.get("accumulated_ayahs", [])
@@ -652,6 +657,10 @@ async def _handle_surah_complete(chat_id: int, context, user_id: int, session: d
         logger.error(f"Surah complete update error: {e}")
 
     close_session(session.get("session_id", ""))
+
+    # Check achievements after surah completion
+    import asyncio
+    asyncio.ensure_future(check_and_notify_achievements(context.bot, user_id))
 
 
 async def handle_limit_reached_premium(update: Update, context: ContextTypes.DEFAULT_TYPE):

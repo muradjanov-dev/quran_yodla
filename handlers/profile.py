@@ -178,12 +178,35 @@ async def profile_settings_callback(update: Update, context: ContextTypes.DEFAUL
     await show_settings(update, context)
 
 
+async def profile_back_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Return to profile page from achievements."""
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    data = get_profile_data(user_id)
+    if not data:
+        await query.message.reply_text("Ma'lumot topilmadi.")
+        return
+    from utils.keyboards import profile_period_keyboard
+    try:
+        await query.message.edit_text(
+            profile_message(data, period="today"),
+            reply_markup=profile_period_keyboard(active="today"),
+        )
+    except Exception:
+        await query.message.reply_text(
+            profile_message(data, period="today"),
+            reply_markup=profile_period_keyboard(active="today"),
+        )
+
+
 def register_profile_handlers(app):
     app.add_handler(MessageHandler(filters.Regex("^📊 Sahifam$"),    show_profile))
     app.add_handler(MessageHandler(filters.Regex("^⚙️ Sozlamalar$"), show_settings))
     app.add_handler(CallbackQueryHandler(profile_period_callback,    pattern="^profile_period_"))
     app.add_handler(CallbackQueryHandler(profile_share_callback,     pattern="^profile_share$"))
     app.add_handler(CallbackQueryHandler(profile_settings_callback,  pattern="^profile_settings$"))
+    app.add_handler(CallbackQueryHandler(profile_back_callback,      pattern="^profile_back$"))
     app.add_handler(CallbackQueryHandler(settings_notif_toggle,      pattern="^settings_notif_toggle$"))
     app.add_handler(CallbackQueryHandler(settings_notif_count_init,  pattern="^settings_notif_count$"))
     app.add_handler(CallbackQueryHandler(settings_notif_count_set,   pattern="^settings_nc_"))

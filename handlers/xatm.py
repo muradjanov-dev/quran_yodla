@@ -22,6 +22,9 @@ from services.firebase_service import (
     get_xatm_ranking, get_user_xatms,
 )
 
+import asyncio
+from handlers.achievements import check_and_notify_achievements
+
 logger = logging.getLogger(__name__)
 
 BOT_USERNAME = "quranyodla_bot"
@@ -338,6 +341,8 @@ async def cb_xatm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         alert   = "⚠️ Bu juz allaqachon olingan!" if not ok else None
         new_st  = check_and_update_xatm_status(xatm_id) if ok else None
         await _refresh_xatm_view(query, xatm_id, user_id, alert=alert)
+        if ok:
+            asyncio.ensure_future(check_and_notify_achievements(context.bot, user_id, {"xatm_joined": True}))
         if new_st == "active":
             xatm = get_xatm(xatm_id)
             num  = xatm.get("xatm_number", "?") if xatm else "?"
@@ -356,6 +361,7 @@ async def cb_xatm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         complete_xatm_juz(xatm_id, juz, user_id)
         new_st  = check_and_update_xatm_status(xatm_id)
         await _refresh_xatm_view(query, xatm_id, user_id)
+        asyncio.ensure_future(check_and_notify_achievements(context.bot, user_id, {"xatm_completed": new_st == "completed"}))
         if new_st == "completed":
             xatm = get_xatm(xatm_id)
             num  = xatm.get("xatm_number", "?") if xatm else "?"

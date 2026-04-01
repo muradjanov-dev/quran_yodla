@@ -60,6 +60,9 @@ async def trial_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🎉 3 kunlik BEPUL Premium faollashtirildi!\n\n"
             "Barcha imkoniyatlar ochiq! Yodlashni boshlang! 🚀"
         )
+        import asyncio
+        from handlers.achievements import check_and_notify_achievements
+        asyncio.ensure_future(check_and_notify_achievements(context.bot, user_id))
     else:
         await query.message.reply_text(
             "❌ Siz avval trial talab qilgansiz yoki hozir premium faol.\n\n"

@@ -42,6 +42,7 @@ from handlers.referral import register_referral_handlers
 from handlers.notifications import register_notification_handlers, send_daily_notifications
 from handlers.contact import build_contact_handler, register_contact_callbacks
 from handlers.xatm import register_xatm_handlers
+from handlers.achievements import register_achievement_handlers
 
 logging.basicConfig(
     format="%(asctime)s — %(name)s — %(levelname)s — %(message)s",
@@ -139,6 +140,7 @@ def build_application() -> Application:
     register_admin_callbacks(application)
     register_contact_callbacks(application)
     register_xatm_handlers(application)
+    register_achievement_handlers(application)
 
     return application
 

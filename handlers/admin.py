@@ -141,6 +141,9 @@ async def admin_prem30_callback(update: Update, context: ContextTypes.DEFAULT_TY
         await context.bot.send_message(target_id, f"💎 Admindan 30 kunlik premium berildi! (Tugaydi: {expiry.strftime('%d.%m.%Y')})")
     except Exception: pass
     await query.message.reply_text(f"✅ {target_id} ga 30 kunlik premium berildi.")
+    import asyncio
+    from handlers.achievements import check_and_notify_achievements
+    asyncio.ensure_future(check_and_notify_achievements(context.bot, target_id))
 
 
 async def admin_prem7_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -213,6 +213,11 @@ async def _process_referral(message, new_user_id: int, ref_code: str,
     except Exception as e:
         logger.warning(f"Could not notify referrer {referrer_id}: {e}")
 
+    # Check referral achievements for referrer
+    import asyncio
+    from handlers.achievements import check_and_notify_achievements
+    asyncio.ensure_future(check_and_notify_achievements(context.bot, referrer_id))
+
 
 def build_onboarding_handler() -> ConversationHandler:
     return ConversationHandler(

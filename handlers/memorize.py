@@ -200,6 +200,11 @@ async def surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Xatolik: sura topilmadi.")
         return ConversationHandler.END
 
+    # Fallback: juz_number may be missing if bot restarted or user jumped here via deep link
+    if not juz_number:
+        juz_number = surah_info.get("juz", [1])[0]
+        context.user_data["juz_number"] = juz_number
+
     # Check daily limit for free users
     db_user = get_user(user_id)
     if not is_premium(db_user):
@@ -220,14 +225,26 @@ async def surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     prog = get_memorization_progress(user_id)
     surah_key  = f"surah_{surah_info['number']}_ayah"
     saved_ayah = prog.get(surah_key)
-    # fall back to legacy current_surah field
+    # Fallback: legacy field (only if same surah was last active)
     if not saved_ayah and prog.get("current_surah") == surah_info["number"]:
         saved_ayah = prog.get("current_ayah")
-    start_ayah = int(saved_ayah) if saved_ayah and int(saved_ayah) > 1 else 1
+
+    # Validate: saved_ayah must be within surah's range
+    total_ayahs = surah_info.get("ayah_count", 1)
+    if saved_ayah:
+        try:
+            saved_ayah = int(saved_ayah)
+        except (ValueError, TypeError):
+            saved_ayah = None
+    start_ayah = saved_ayah if saved_ayah and 1 < saved_ayah <= total_ayahs else 1
 
     if start_ayah > 1:
         await query.message.reply_text(
             f"▶️ {surah_info['name']} — {start_ayah}-oyatdan davom ettirilmoqda 📖"
+        )
+    else:
+        await query.message.reply_text(
+            f"📖 {surah_info['name']} — boshidan boshlanmoqda"
         )
 
     session = create_session(
@@ -648,14 +665,15 @@ async def _handle_surah_complete(chat_id: int, context, user_id: int, session: d
     if level_up:
         await context.bot.send_message(chat_id, level_up_message(level_up[1]))
 
-    # Mark surah completed in user progress
+    # Mark surah completed + reset per-surah resume key
     from services.firebase_service import update_user
-    from google.cloud.firestore_v1 import ArrayUnion
+    from google.cloud.firestore_v1 import ArrayUnion, DELETE_FIELD
     try:
         from firebase_config import db
         if db:
             db.collection("users").document(str(user_id)).update({
-                "memorization_progress.completed_surahs": ArrayUnion([surah_info["name"]])
+                "memorization_progress.completed_surahs": ArrayUnion([surah_info["number"]]),
+                f"memorization_progress.surah_{surah_info['number']}_ayah": DELETE_FIELD,
             })
     except Exception as e:
         logger.error(f"Surah complete update error: {e}")

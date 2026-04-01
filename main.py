@@ -39,7 +39,11 @@ from handlers.listen   import build_listen_handler
 from handlers.profile  import register_profile_handlers
 from handlers.leaderboard import register_leaderboard_handlers
 from handlers.referral import register_referral_handlers
-from handlers.notifications import register_notification_handlers, send_daily_notifications
+from handlers.notifications import (
+    register_notification_handlers, send_daily_notifications,
+    send_xatm_invitation, send_daily_top5,
+    send_weekly_top10, send_monthly_top10, send_admin_daily_report,
+)
 from handlers.contact import build_contact_handler, register_contact_callbacks
 from handlers.xatm import register_xatm_handlers
 from handlers.achievements import register_achievement_handlers
@@ -109,6 +113,73 @@ def setup_scheduler(app: Application):
         _expire_premiums,
         CronTrigger(hour=0, minute=5, timezone=TZ),
         id="premium_expiry",
+        replace_existing=True,
+    )
+
+    # Daily top-5 — 22:00 Tashkent = 17:00 UTC
+    async def _daily_top5():
+        await send_daily_top5(app.bot)
+
+    scheduler.add_job(
+        _daily_top5,
+        CronTrigger(hour=17, minute=0, timezone=TZ),
+        id="daily_top5",
+        replace_existing=True,
+    )
+
+    # Admin detailed daily report — 23:00 Tashkent = 18:00 UTC
+    async def _admin_report():
+        await send_admin_daily_report(app.bot, admin_id=ADMIN_ID)
+
+    scheduler.add_job(
+        _admin_report,
+        CronTrigger(hour=18, minute=0, timezone=TZ),
+        id="admin_daily_report",
+        replace_existing=True,
+    )
+
+    # Weekly top-10 — Sunday 21:00 Tashkent = 16:00 UTC
+    async def _weekly_top10():
+        await send_weekly_top10(app.bot)
+
+    scheduler.add_job(
+        _weekly_top10,
+        CronTrigger(day_of_week="sun", hour=16, minute=0, timezone=TZ),
+        id="weekly_top10",
+        replace_existing=True,
+    )
+
+    # Monthly top-10 — last day of month 20:00 Tashkent = 15:00 UTC
+    async def _monthly_top10():
+        await send_monthly_top10(app.bot)
+
+    scheduler.add_job(
+        _monthly_top10,
+        CronTrigger(day="last", hour=15, minute=0, timezone=TZ),
+        id="monthly_top10",
+        replace_existing=True,
+    )
+
+    # Xatm invitation — every Wednesday 12:00 Tashkent = 07:00 UTC
+    async def _xatm_invite():
+        await send_xatm_invitation(app.bot)
+
+    scheduler.add_job(
+        _xatm_invite,
+        CronTrigger(day_of_week="wed", hour=7, minute=0, timezone=TZ),
+        id="xatm_invitation",
+        replace_existing=True,
+    )
+
+    # Flush achievement broadcast queue — every 30 minutes
+    async def _flush_congrats():
+        from handlers.achievements import flush_congrats_queue
+        await flush_congrats_queue(app.bot)
+
+    scheduler.add_job(
+        _flush_congrats,
+        "interval", minutes=30,
+        id="flush_congrats_queue",
         replace_existing=True,
     )
 

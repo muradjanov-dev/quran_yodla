@@ -180,6 +180,24 @@ async def onboarding_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=main_menu_keyboard()
     )
 
+    # Notify admin about new user
+    try:
+        from services.firebase_service import get_all_users
+        total_users = len(get_all_users())
+        username_str = f"@{query.from_user.username}" if query.from_user.username else "—"
+        await context.bot.send_message(
+            chat_id=ADMIN_ID,
+            text=(
+                f"👤 YANGI FOYDALANUVCHI!\n\n"
+                f"Ism: {full_name}\n"
+                f"Username: {username_str}\n"
+                f"ID: {user_id}\n\n"
+                f"📊 Jami foydalanuvchilar: {total_users}"
+            )
+        )
+    except Exception as e:
+        logger.warning(f"Could not notify admin of new user: {e}")
+
     # Handle referral reward
     referral_code = context.user_data.get("referral_code")
     if referral_code:

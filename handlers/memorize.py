@@ -216,14 +216,20 @@ async def surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if existing:
         close_session(existing["session_id"])
 
-    # Resume from saved progress for this surah (if any)
+    # Resume from saved progress for this specific surah
     prog = get_memorization_progress(user_id)
-    if prog.get("current_surah") == surah_info["number"]:
-        start_ayah = prog.get("current_ayah", 1)
-    else:
-        start_ayah = 1
+    surah_key  = f"surah_{surah_info['number']}_ayah"
+    saved_ayah = prog.get(surah_key)
+    # fall back to legacy current_surah field
+    if not saved_ayah and prog.get("current_surah") == surah_info["number"]:
+        saved_ayah = prog.get("current_ayah")
+    start_ayah = int(saved_ayah) if saved_ayah and int(saved_ayah) > 1 else 1
 
-    # Create session
+    if start_ayah > 1:
+        await query.message.reply_text(
+            f"▶️ {surah_info['name']} — {start_ayah}-oyatdan davom ettirilmoqda 📖"
+        )
+
     session = create_session(
         user_id     = user_id,
         juz_number  = juz_number,
@@ -234,9 +240,7 @@ async def surah_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         start_ayah  = start_ayah,
     )
     context.user_data["session"] = session
-
-    chat_id = query.message.chat_id
-    return await _send_current_ayah(chat_id, context, user_id)
+    return await _send_current_ayah(query.message.chat_id, context, user_id)
 
 
 # ─── Core Memorize Flow ───────────────────────────────────────────────────────

@@ -122,6 +122,8 @@ def save_memorization_progress(user_id: int, surah_number: int, surah_name: str,
         "memorization_progress.current_surah": surah_number,
         "memorization_progress.current_surah_name": surah_name,
         "memorization_progress.current_ayah": next_ayah,
+        # Per-surah key so any surah can be resumed independently
+        f"memorization_progress.surah_{surah_number}_ayah": next_ayah,
     })
 
 

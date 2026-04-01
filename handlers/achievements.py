@@ -2,31 +2,30 @@
 achievements.py — Yutuq va Mukofotlar (Achievements & Rewards) system.
 
 Achievements are stored in Firebase under users/{uid}/achievements/{achievement_id}
-as { "unlocked_at": <timestamp>, "notified": bool }.
+as { "unlocked_at": <timestamp>, "notified": bool, "congrats_count": int }.
 
-When an achievement is unlocked:
-  1. Save it to Firebase
-  2. Award bonus XP to the user
-  3. Broadcast a notification to ALL other users with a "Tabriklash" button
-  4. When any user taps Tabriklash, the achiever is notified with their name
+Broadcast queue:
+  - When an achievement is unlocked, queue items are created in
+    `achievement_broadcast_queue` collection (one doc per recipient).
+  - `flush_congrats_queue(bot)` is called every 30 minutes by APScheduler.
+    It sends max 10 pending notifications per user per day, skipping users
+    who are actively memorizing.
+  - Congrats count is tracked per achievement and shown on the button.
 """
 
 import logging
 from datetime import datetime
-from typing import Optional
 import pytz
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler
 
-from config import LOCAL_TZ, ADMIN_ID
+from config import LOCAL_TZ
 
 logger = logging.getLogger(__name__)
 TZ = pytz.timezone(LOCAL_TZ)
 
 # ─── Achievement Definitions ──────────────────────────────────────────────────
-# Each achievement: id, emoji, title (uz), description, bonus_xp, condition_key
-# condition_key is used when checking — maps to a check function below.
 
 ACHIEVEMENTS = [
     # ── Oyat yodlash ──────────────────────────────────────────────────────────
@@ -345,38 +344,26 @@ ACHIEVEMENTS = [
     },
 ]
 
-# Build a lookup dict
 ACHIEVEMENT_MAP = {a["id"]: a for a in ACHIEVEMENTS}
+
+MAX_NOTIFS_PER_DAY = 10
 
 
 # ─── Helper field extractors ───────────────────────────────────────────────────
 
-def _total_verses(u: dict) -> int:
-    return u.get("stats", {}).get("total_verses_read", 0)
-
-def _total_reps(u: dict) -> int:
-    return u.get("stats", {}).get("total_repetitions", 0)
-
-def _total_minutes(u: dict) -> int:
-    return u.get("stats", {}).get("total_minutes", 0)
-
-def _himmat(u: dict) -> int:
-    return u.get("stats", {}).get("himmat_points", 0)
-
-def _streak(u: dict) -> int:
-    return u.get("stats", {}).get("current_streak_days", 0)
-
-def _completed_surahs(u: dict) -> list:
-    return u.get("memorization_progress", {}).get("completed_surahs", [])
-
-def _completed_juz(u: dict) -> list:
-    return u.get("memorization_progress", {}).get("completed_juz", [])
+def _total_verses(u): return u.get("stats", {}).get("total_verses_read", 0)
+def _total_reps(u):   return u.get("stats", {}).get("total_repetitions", 0)
+def _total_minutes(u): return u.get("stats", {}).get("total_minutes", 0)
+def _himmat(u):        return u.get("stats", {}).get("himmat_points", 0)
+def _streak(u):        return u.get("stats", {}).get("current_streak_days", 0)
+def _completed_surahs(u): return u.get("memorization_progress", {}).get("completed_surahs", [])
+def _completed_juz(u):    return u.get("memorization_progress", {}).get("completed_juz", [])
 
 
 # ─── Firebase helpers ──────────────────────────────────────────────────────────
 
 def get_user_achievements(user_id: int) -> dict:
-    """Returns {achievement_id: {"unlocked_at": ..., "notified": bool}}."""
+    """Returns {achievement_id: {"unlocked_at": ..., "notified": bool, "congrats_count": int}}."""
     from firebase_config import db
     if not db:
         return {}
@@ -389,7 +376,6 @@ def get_user_achievements(user_id: int) -> dict:
 
 
 def save_achievement(user_id: int, achievement_id: str):
-    """Mark an achievement as unlocked in Firebase."""
     from firebase_config import db
     if not db:
         return
@@ -398,13 +384,13 @@ def save_achievement(user_id: int, achievement_id: str):
             .document(achievement_id).set({
                 "unlocked_at": datetime.now(TZ),
                 "notified": False,
+                "congrats_count": 0,
             })
     except Exception as e:
         logger.error(f"save_achievement error: {e}")
 
 
 def mark_achievement_notified(user_id: int, achievement_id: str):
-    """Mark achievement broadcast as sent."""
     from firebase_config import db
     if not db:
         return
@@ -415,14 +401,92 @@ def mark_achievement_notified(user_id: int, achievement_id: str):
         logger.error(f"mark_achievement_notified error: {e}")
 
 
+def increment_congrats_count(achiever_id: int, ach_id: str) -> int:
+    """Atomically increment congrats_count and return the new value."""
+    from firebase_config import db
+    from google.cloud.firestore_v1 import Increment
+    if not db:
+        return 0
+    try:
+        ref = db.collection("users").document(str(achiever_id)) \
+                .collection("achievements").document(ach_id)
+        ref.update({"congrats_count": Increment(1)})
+        doc = ref.get()
+        return doc.to_dict().get("congrats_count", 1) if doc.exists else 1
+    except Exception as e:
+        logger.error(f"increment_congrats_count error: {e}")
+        return 0
+
+
+def get_congrats_count(achiever_id: int, ach_id: str) -> int:
+    from firebase_config import db
+    if not db:
+        return 0
+    try:
+        doc = db.collection("users").document(str(achiever_id)) \
+                .collection("achievements").document(ach_id).get()
+        return doc.to_dict().get("congrats_count", 0) if doc.exists else 0
+    except Exception:
+        return 0
+
+
+# ─── Broadcast queue helpers ───────────────────────────────────────────────────
+
+def queue_achievement_broadcast(achiever_id: int, achiever_name: str, achievement: dict, recipients: list):
+    """
+    Add one queue doc per recipient into `achievement_broadcast_queue`.
+    Each doc: {recipient_id, achiever_id, achiever_name, ach_id, created_at, sent: false}
+    """
+    from firebase_config import db
+    if not db:
+        return
+    coll = db.collection("achievement_broadcast_queue")
+    batch = db.batch()
+    ach_id = achievement["id"]
+    now = datetime.now(TZ)
+    for uid in recipients:
+        doc_ref = coll.document()
+        batch.set(doc_ref, {
+            "recipient_id":  uid,
+            "achiever_id":   achiever_id,
+            "achiever_name": achiever_name,
+            "ach_id":        ach_id,
+            "created_at":    now,
+            "sent":          False,
+        })
+    try:
+        batch.commit()
+        logger.info(f"Queued {len(recipients)} broadcast items for {achiever_id}/{ach_id}")
+    except Exception as e:
+        logger.error(f"queue_achievement_broadcast batch error: {e}")
+
+
+def _get_daily_sent_count(user_id: int, today_str: str) -> int:
+    from firebase_config import db
+    if not db:
+        return 0
+    try:
+        doc = db.collection("achievement_queue_daily").document(f"{user_id}_{today_str}").get()
+        return doc.to_dict().get("count", 0) if doc.exists else 0
+    except Exception:
+        return 0
+
+
+def _increment_daily_sent(user_id: int, today_str: str):
+    from firebase_config import db
+    from google.cloud.firestore_v1 import Increment
+    if not db:
+        return
+    try:
+        db.collection("achievement_queue_daily").document(f"{user_id}_{today_str}") \
+            .set({"count": Increment(1)}, merge=True)
+    except Exception as e:
+        logger.error(f"_increment_daily_sent error: {e}")
+
+
 # ─── Core: check and unlock achievements ──────────────────────────────────────
 
 def check_new_achievements(user_id: int, extra_signals: dict = None) -> list:
-    """
-    Check all achievements for this user and unlock any that are newly met.
-    Returns list of newly unlocked achievement dicts.
-    extra_signals: optional dict with flags like {"xatm_joined": True}
-    """
     from services.firebase_service import get_user
     user = get_user(user_id)
     if not user:
@@ -435,11 +499,10 @@ def check_new_achievements(user_id: int, extra_signals: dict = None) -> list:
     for ach in ACHIEVEMENTS:
         aid = ach["id"]
         if aid in already_unlocked:
-            continue  # Already earned
+            continue
         try:
             if ach["condition"](user, extra_signals):
                 save_achievement(user_id, aid)
-                # Award bonus XP
                 if ach["bonus_xp"] > 0:
                     from services.gamification import award_points
                     award_points(user_id, ach["bonus_xp"], f"achievement_{aid}")
@@ -451,59 +514,121 @@ def check_new_achievements(user_id: int, extra_signals: dict = None) -> list:
     return newly_unlocked
 
 
-# ─── Broadcast new achievements to all users ──────────────────────────────────
+# ─── Flush queue: send pending broadcast notifications ────────────────────────
 
-async def broadcast_achievement(bot, achiever_id: int, achiever_name: str, achievement: dict):
-    """Send achievement notification to all other users."""
+async def flush_congrats_queue(bot):
+    """
+    Called every 30 minutes by APScheduler.
+    For each user: send up to MAX_NOTIFS_PER_DAY pending notifications,
+    skipping users who are actively memorizing.
+    """
+    from firebase_config import db
+    from services.firebase_service import get_active_session
+    if not db:
+        return
+
+    today_str = datetime.now(TZ).strftime("%Y-%m-%d")
+
+    try:
+        pending_docs = db.collection("achievement_broadcast_queue") \
+            .where("sent", "==", False) \
+            .order_by("created_at") \
+            .limit(2000) \
+            .stream()
+        pending = [(doc.id, doc.to_dict()) for doc in pending_docs]
+    except Exception as e:
+        logger.error(f"flush_congrats_queue fetch error: {e}")
+        return
+
+    # Group by recipient
+    by_recipient: dict[int, list] = {}
+    for doc_id, data in pending:
+        rid = data.get("recipient_id")
+        if rid:
+            by_recipient.setdefault(rid, []).append((doc_id, data))
+
+    sent_total = 0
+    skipped_memorizing = 0
+
+    for recipient_id, items in by_recipient.items():
+        # Skip users who are currently memorizing
+        try:
+            active_session = get_active_session(recipient_id)
+            if active_session:
+                skipped_memorizing += 1
+                continue
+        except Exception:
+            pass
+
+        daily_sent = _get_daily_sent_count(recipient_id, today_str)
+        remaining = MAX_NOTIFS_PER_DAY - daily_sent
+        if remaining <= 0:
+            continue
+
+        to_send = items[:remaining]
+
+        for doc_id, data in to_send:
+            ach_id        = data.get("ach_id", "")
+            achiever_id   = data.get("achiever_id")
+            achiever_name = data.get("achiever_name", "Foydalanuvchi")
+            ach           = ACHIEVEMENT_MAP.get(ach_id)
+            if not ach:
+                # Mark sent to clean up unknown items
+                db.collection("achievement_broadcast_queue").document(doc_id).update({"sent": True})
+                continue
+
+            congrats_count = get_congrats_count(achiever_id, ach_id)
+            count_label    = f" ({congrats_count})" if congrats_count > 0 else ""
+
+            xp_line = f"\n⭐ Bonus: +{ach['bonus_xp']} Himmat" if ach["bonus_xp"] > 0 else ""
+            text = (
+                f"🏆 YANGI YUTUQ!\n\n"
+                f"{ach['emoji']} {ach['title']}\n"
+                f"📌 {ach['desc']}"
+                f"{xp_line}\n\n"
+                f"👤 {achiever_name} ushbu yutuqqa erishdi!\n\n"
+                f"💬 Uni tabriklaymizmi?"
+            )
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    f"🤝 Tabriklash{count_label}",
+                    callback_data=f"congrats_{achiever_id}_{ach_id}"
+                )
+            ]])
+
+            try:
+                await bot.send_message(
+                    chat_id=recipient_id,
+                    text=text,
+                    reply_markup=keyboard,
+                )
+                db.collection("achievement_broadcast_queue").document(doc_id).update({"sent": True})
+                _increment_daily_sent(recipient_id, today_str)
+                sent_total += 1
+            except Exception as e:
+                logger.warning(f"flush_congrats_queue send to {recipient_id} failed: {e}")
+
+    logger.info(f"flush_congrats_queue: sent={sent_total}, skipped_memorizing={skipped_memorizing}")
+
+
+# ─── Queue broadcast for all users ────────────────────────────────────────────
+
+def broadcast_achievement(achiever_id: int, achiever_name: str, achievement: dict):
+    """
+    Queue achievement notification for all other users.
+    (Not async — just writes to Firestore queue. flush_congrats_queue delivers them.)
+    """
     from services.firebase_service import get_all_users
     try:
         all_users = get_all_users()
+        recipients = [
+            u["telegram_id"] for u in all_users
+            if u.get("telegram_id") and u["telegram_id"] != achiever_id
+        ]
+        queue_achievement_broadcast(achiever_id, achiever_name, achievement, recipients)
+        mark_achievement_notified(achiever_id, achievement["id"])
     except Exception as e:
-        logger.error(f"broadcast_achievement get_all_users error: {e}")
-        return
-
-    ach_id     = achievement["id"]
-    ach_emoji  = achievement["emoji"]
-    ach_title  = achievement["title"]
-    ach_desc   = achievement["desc"]
-    bonus_xp   = achievement["bonus_xp"]
-
-    xp_line = f"\n⭐ Bonus: +{bonus_xp} Himmat" if bonus_xp > 0 else ""
-
-    text = (
-        f"🏆 YANGI YUTUQ!\n\n"
-        f"{ach_emoji} {ach_title}\n"
-        f"📌 {ach_desc}\n"
-        f"{xp_line}\n\n"
-        f"👤 {achiever_name} ushbu yutuqqa erishdi!\n\n"
-        f"💬 Uni tabriklaymizmi?"
-    )
-
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            "🤝 Tabriklash",
-            callback_data=f"congrats_{achiever_id}_{ach_id}"
-        )
-    ]])
-
-    sent = 0
-    failed = 0
-    for u in all_users:
-        uid = u.get("telegram_id")
-        if not uid or uid == achiever_id:
-            continue
-        try:
-            await bot.send_message(
-                chat_id=uid,
-                text=text,
-                reply_markup=keyboard,
-            )
-            sent += 1
-        except Exception:
-            failed += 1
-
-    logger.info(f"Achievement broadcast for {achiever_id}/{ach_id}: sent={sent}, failed={failed}")
-    mark_achievement_notified(achiever_id, ach_id)
+        logger.error(f"broadcast_achievement error for {achiever_id}/{achievement['id']}: {e}")
 
 
 # ─── Handle Tabriklash button ─────────────────────────────────────────────────
@@ -531,13 +656,16 @@ async def cb_congrats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ach = ACHIEVEMENT_MAP.get(ach_id)
     ach_title = f"{ach['emoji']} {ach['title']}" if ach else "yutuq"
 
+    # Increment congrats count and get new value
+    new_count = increment_congrats_count(achiever_id, ach_id)
+
+    # Notify achiever
     notify_text = (
         f"🎆🎇🎉\n\n"
         f"<b>{congratulator_name}</b> Sizni <b>{ach_title}</b> yutug'ingiz bilan tabrikladi!\n\n"
         f"Yutuqlaringizni ALLOH ziyoda qilsin!\n"
         f"Ko'tarilishda Davom eting 💪🌙"
     )
-
     try:
         await context.bot.send_message(
             chat_id=achiever_id,
@@ -547,10 +675,13 @@ async def cb_congrats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.warning(f"Could not notify achiever {achiever_id}: {e}")
 
-    # Edit the button to show it was tapped
+    # Edit the button: show updated congrats count
     try:
         new_kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Tabrikladingiz!", callback_data="congrats_done")
+            InlineKeyboardButton(
+                f"✅ Tabrikladingiz! ({new_count})",
+                callback_data="congrats_done"
+            )
         ]])
         await query.message.edit_reply_markup(reply_markup=new_kb)
     except Exception:
@@ -565,7 +696,6 @@ async def cb_congrats_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─── Show user's achievements page ────────────────────────────────────────────
 
 async def show_achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show user's achievements page from Sahifam."""
     query = update.callback_query
     if query:
         await query.answer()
@@ -587,7 +717,6 @@ async def show_achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "",
     ]
 
-    # Group by category
     categories = [
         ("📖 Oyat Yodlash",  ["first_ayah","verses_10","verses_50","verses_100","verses_300","verses_500","verses_1000","verses_3000","full_quran"]),
         ("📜 Surahlar",       ["first_surah","surahs_5","surahs_10","surahs_20"]),
@@ -613,23 +742,21 @@ async def show_achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 unlocked_at = unlocked[aid].get("unlocked_at")
                 if hasattr(unlocked_at, "strftime"):
                     date_str = unlocked_at.strftime("%d.%m.%Y")
-                elif hasattr(unlocked_at, "isoformat"):
-                    # Firestore Timestamp
+                else:
                     try:
                         date_str = unlocked_at.astimezone(TZ).strftime("%d.%m.%Y")
                     except Exception:
                         date_str = "—"
-                else:
-                    date_str = "—"
                 bonus = f" +{ach['bonus_xp']} XP" if ach["bonus_xp"] > 0 else ""
-                lines.append(f"  ✅ {ach['emoji']} {ach['title']}{bonus} ({date_str})")
+                congrats = unlocked[aid].get("congrats_count", 0)
+                congrats_str = f" 🤝{congrats}" if congrats > 0 else ""
+                lines.append(f"  ✅ {ach['emoji']} {ach['title']}{bonus}{congrats_str} ({date_str})")
             else:
                 lines.append(f"  🔒 {ach['emoji']} {ach['title']} — {ach['desc']}")
         lines.append("")
 
     text = "\n".join(lines)
 
-    # Back button
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("↩️ Sahifamga qaytish", callback_data="profile_back")
     ]])
@@ -650,10 +777,8 @@ async def show_achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def check_and_notify_achievements(bot, user_id: int, extra_signals: dict = None):
     """
-    Call this after any activity (ayah completed, surah done, etc.)
-    It checks for newly unlocked achievements and:
-      1. Notifies the user directly
-      2. Broadcasts to all other users
+    Call this after any activity. Checks for newly unlocked achievements,
+    notifies the user directly, and queues broadcast to all other users.
     """
     from services.firebase_service import get_user
     newly_unlocked = check_new_achievements(user_id, extra_signals)
@@ -680,9 +805,9 @@ async def check_and_notify_achievements(bot, user_id: int, extra_signals: dict =
         except Exception as e:
             logger.warning(f"Could not notify user {user_id} of achievement: {e}")
 
-        # Broadcast to others
+        # Queue broadcast (non-async, just Firestore writes)
         try:
-            await broadcast_achievement(bot, user_id, full_name, ach)
+            broadcast_achievement(user_id, full_name, ach)
         except Exception as e:
             logger.error(f"broadcast_achievement error for {user_id}/{ach['id']}: {e}")
 
@@ -693,7 +818,4 @@ def register_achievement_handlers(app):
     app.add_handler(CallbackQueryHandler(show_achievements,  pattern="^achievements_show$"))
     app.add_handler(CallbackQueryHandler(cb_congrats,        pattern="^congrats_\\d+_"))
     app.add_handler(CallbackQueryHandler(cb_congrats_done,   pattern="^congrats_done$"))
-    app.add_handler(CallbackQueryHandler(
-        lambda u, c: show_achievements(u, c),
-        pattern="^profile_back$"
-    ))
+    app.add_handler(CallbackQueryHandler(show_achievements, pattern="^profile_back$"))

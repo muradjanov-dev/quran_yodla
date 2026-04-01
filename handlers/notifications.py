@@ -298,7 +298,311 @@ async def handle_memo_tomorrow(update, context):
         pass
 
 
+async def send_xatm_invitation(bot=None):
+    """Periodic broadcast: invite users to join Jamoaviy Xatm."""
+    if bot is None:
+        return
+    from services.firebase_service import get_all_users, get_xatm_stats
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    try:
+        stats = get_xatm_stats()
+    except Exception:
+        stats = {}
+    active_xatms  = stats.get("active_xatms", 0)
+    total_readers = stats.get("total_readers", 0)
+
+    text = (
+        "👥 JAMOAVIY XATM\n\n"
+        "Qur'on xatmini jamoa bo'lib birgalikda o'qiymizmi?\n\n"
+        "Har bir ishtirokchi 1 ta juz o'qiydi — birgalikda 30 juz!\n"
+        f"📊 Hozir faol xatmlar: {active_xatms}\n"
+        f"🕌 Jami ishtirokchilar: {total_readers}\n\n"
+        "Alloh barcha Qur'on o'quvchilarni sevadi! 🤲"
+    )
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("👥 Jamoaviy Xatmga qo'shilish", callback_data="open_xatm")
+    ]])
+
+    users  = get_all_users()
+    sent   = 0
+    failed = 0
+    for u in users:
+        uid = u.get("telegram_id")
+        if not uid:
+            continue
+        try:
+            await bot.send_message(chat_id=uid, text=text, reply_markup=keyboard)
+            sent += 1
+        except Exception:
+            failed += 1
+        await asyncio.sleep(0.05)
+    logger.info(f"Xatm invitation: sent={sent}, failed={failed}")
+
+
+async def send_daily_top5(bot=None):
+    """Send top-5 users of the day to all users. Runs daily at 22:00 Tashkent."""
+    if bot is None:
+        return
+    from services.firebase_service import get_all_users
+    now_str = datetime.now(TZ).strftime("%Y-%m-%d")
+
+    users = get_all_users()
+    daily = []
+    for u in users:
+        uid = u.get("telegram_id")
+        if not uid:
+            continue
+        try:
+            st = get_daily_stats(uid, now_str)
+            v  = st.get("verses_read", 0)
+            if v > 0:
+                daily.append({
+                    "name":   u.get("full_name", "Anonim"),
+                    "verses": v,
+                    "himmat": st.get("himmat_earned", 0),
+                })
+        except Exception:
+            pass
+
+    if not daily:
+        return
+
+    daily.sort(key=lambda x: x["verses"], reverse=True)
+    top5 = daily[:5]
+
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+    lines  = [
+        "🏆 BUGUNGI TOP-5",
+        "─────────────────────",
+        datetime.now(TZ).strftime("%d.%m.%Y"),
+        "─────────────────────",
+    ]
+    for i, e in enumerate(top5):
+        lines.append(f"{medals[i]} {e['name'][:18]} — {e['verses']} oyat")
+    lines.append("─────────────────────")
+    lines.append(f"Jami {len(daily)} kishi bugun yodladi 📖")
+    text = "\n".join(lines)
+
+    all_users = users
+    sent = 0
+    for u in all_users:
+        uid = u.get("telegram_id")
+        if not uid:
+            continue
+        try:
+            await bot.send_message(chat_id=uid, text=text)
+            sent += 1
+        except Exception:
+            pass
+        await asyncio.sleep(0.05)
+    logger.info(f"Daily top-5 sent to {sent} users")
+
+
+async def send_weekly_top10(bot=None):
+    """Send top-10 users of the week every Sunday. All users."""
+    if bot is None:
+        return
+    from services.firebase_service import get_all_users
+    now = datetime.now(TZ)
+    users = get_all_users()
+
+    weekly = []
+    for u in users:
+        uid = u.get("telegram_id")
+        if not uid:
+            continue
+        try:
+            st = get_period_stats(uid, "week")
+            v  = st.get("verses_read", 0)
+            if v > 0:
+                weekly.append({
+                    "name":   u.get("full_name", "Anonim"),
+                    "verses": v,
+                    "himmat": st.get("himmat_earned", 0),
+                })
+        except Exception:
+            pass
+
+    if not weekly:
+        return
+
+    weekly.sort(key=lambda x: x["verses"], reverse=True)
+    top10  = weekly[:10]
+    medals = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+    week_label = now.strftime("%d.%m") + " hafta"
+    lines = [
+        "🏆 HAFTALIK TOP-10",
+        "─────────────────────",
+        week_label,
+        "─────────────────────",
+    ]
+    for i, e in enumerate(top10):
+        lines.append(f"{medals[i]} {e['name'][:18]} — {e['verses']} oyat")
+    lines.append("─────────────────────")
+    lines.append(f"Jami {len(weekly)} kishi bu hafta yodladi 📖")
+    lines.append("Alloh barchadan qabul qilsin! 🤲")
+    text = "\n".join(lines)
+
+    sent = 0
+    for u in users:
+        uid = u.get("telegram_id")
+        if not uid:
+            continue
+        try:
+            await bot.send_message(chat_id=uid, text=text)
+            sent += 1
+        except Exception:
+            pass
+        await asyncio.sleep(0.05)
+    logger.info(f"Weekly top-10 sent to {sent} users")
+
+
+async def send_monthly_top10(bot=None):
+    """Send top-10 users of the month on last day of month."""
+    if bot is None:
+        return
+    from services.firebase_service import get_all_users
+    now   = datetime.now(TZ)
+    users = get_all_users()
+
+    monthly = []
+    for u in users:
+        uid = u.get("telegram_id")
+        if not uid:
+            continue
+        try:
+            st = get_period_stats(uid, "month")
+            v  = st.get("verses_read", 0)
+            if v > 0:
+                monthly.append({
+                    "name":   u.get("full_name", "Anonim"),
+                    "verses": v,
+                    "himmat": st.get("himmat_earned", 0),
+                })
+        except Exception:
+            pass
+
+    if not monthly:
+        return
+
+    monthly.sort(key=lambda x: x["verses"], reverse=True)
+    top10  = monthly[:10]
+    medals = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+    month_label = now.strftime("%B %Y")
+    lines = [
+        "🏆 OYLIK TOP-10",
+        "─────────────────────",
+        month_label,
+        "─────────────────────",
+    ]
+    for i, e in enumerate(top10):
+        lines.append(f"{medals[i]} {e['name'][:18]} — {e['verses']} oyat")
+    lines.append("─────────────────────")
+    lines.append(f"Jami {len(monthly)} kishi bu oy yodladi 📖")
+    lines.append("Alloh barchadan qabul qilsin! 🤲")
+    text = "\n".join(lines)
+
+    sent = 0
+    for u in users:
+        uid = u.get("telegram_id")
+        if not uid:
+            continue
+        try:
+            await bot.send_message(chat_id=uid, text=text)
+            sent += 1
+        except Exception:
+            pass
+        await asyncio.sleep(0.05)
+    logger.info(f"Monthly top-10 sent to {sent} users")
+
+
+async def send_admin_daily_report(bot=None, admin_id: int = None):
+    """Send detailed per-user daily report to admin. Only active users shown."""
+    if bot is None or admin_id is None:
+        return
+    from services.firebase_service import get_all_users
+    now_str = datetime.now(TZ).strftime("%Y-%m-%d")
+    now_disp = datetime.now(TZ).strftime("%d.%m.%Y")
+
+    users = get_all_users()
+    active_rows = []
+
+    for u in users:
+        uid = u.get("telegram_id")
+        if not uid:
+            continue
+        try:
+            st = get_daily_stats(uid, now_str)
+        except Exception:
+            continue
+        verses = st.get("verses_read", 0)
+        reps   = st.get("repetitions", 0)
+        mins   = st.get("minutes", 0)
+        himmat = st.get("himmat_earned", 0)
+        if verses == 0 and reps == 0:
+            continue  # skip idle users
+        name = (u.get("full_name") or "Anonim")[:18]
+        username = u.get("username", "")
+        uname_str = f"@{username}" if username else f"#{uid}"
+        active_rows.append({
+            "name": name,
+            "uname": uname_str,
+            "verses": verses,
+            "reps": reps,
+            "mins": mins,
+            "himmat": himmat,
+        })
+
+    active_rows.sort(key=lambda x: x["verses"], reverse=True)
+
+    total_users   = len(users)
+    total_active  = len(active_rows)
+    total_verses  = sum(r["verses"] for r in active_rows)
+    total_reps    = sum(r["reps"]   for r in active_rows)
+    total_mins    = sum(r["mins"]   for r in active_rows)
+
+    lines = [
+        f"📊 KUNLIK HISOBOT — {now_disp}",
+        "══════════════════════════",
+        f"👥 Jami foydalanuvchilar: {total_users}",
+        f"✅ Bugun faol: {total_active}",
+        f"📖 Jami oyatlar: {total_verses}",
+        f"🔄 Jami takrorlar: {total_reps}",
+        f"⏱ Jami vaqt: {total_mins} daqiqa",
+        "══════════════════════════",
+        "👤 FAOL FOYDALANUVCHILAR:",
+        "──────────────────────────",
+    ]
+
+    for r in active_rows:
+        lines.append(
+            f"• {r['name']} ({r['uname']})\n"
+            f"  📖 {r['verses']} oyat | 🔄 {r['reps']} takror | "
+            f"⏱ {r['mins']}d | +{r['himmat']} XP"
+        )
+
+    lines.append("══════════════════════════")
+    text = "\n".join(lines)
+
+    # Split if too long (Telegram 4096 char limit)
+    chunk_size = 4000
+    chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+    for chunk in chunks:
+        try:
+            await bot.send_message(chat_id=admin_id, text=chunk)
+        except Exception as e:
+            logger.error(f"Admin daily report send error: {e}")
+    logger.info(f"Admin daily report sent: {total_active} active users")
+
+
 def register_notification_handlers(app):
     from telegram.ext import CallbackQueryHandler
     app.add_handler(CallbackQueryHandler(handle_snooze,        pattern="^snooze_2h$"))
     app.add_handler(CallbackQueryHandler(handle_memo_tomorrow, pattern="^memo_tomorrow$"))
+    async def _open_xatm(update, context):
+        query = update.callback_query
+        await query.answer()
+        from handlers.xatm import show_xatm_dashboard
+        await show_xatm_dashboard(update, context)
+
+    app.add_handler(CallbackQueryHandler(_open_xatm, pattern="^open_xatm$"))

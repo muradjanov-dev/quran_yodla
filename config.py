@@ -7,12 +7,9 @@ load_dotenv()
 BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8770428749:AAEM1frAdej02vdp6LW7wPgvbthXa6idH8o")
 ADMIN_ID: int = int(os.getenv("ADMIN_ID", "917456291"))
 
-# ─── Firebase ─────────────────────────────────────────────────────────────────
-FIREBASE_CREDENTIALS: str = os.getenv("FIREBASE_CREDENTIALS", "")  # JSON string
-
 # ─── Webhook / Server ─────────────────────────────────────────────────────────
 WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", "")
-PORT: int = int(os.getenv("PORT", "8443"))
+PORT: int = int(os.getenv("PORT", "8080"))
 
 # ─── Bot Logic Constants ───────────────────────────────────────────────────────
 DAILY_FREE_LIMIT: int = 5          # free users: max new ayahs per day

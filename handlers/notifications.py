@@ -558,7 +558,6 @@ async def send_admin_daily_report(bot=None, admin_id: int = None):
     total_users   = len(users)
     total_active  = len(active_rows)
     total_verses  = sum(r["verses"] for r in active_rows)
-    total_reps    = sum(r["reps"]   for r in active_rows)
     total_mins    = sum(r["mins"]   for r in active_rows)
 
     lines = [
@@ -566,8 +565,7 @@ async def send_admin_daily_report(bot=None, admin_id: int = None):
         "══════════════════════════",
         f"👥 Jami foydalanuvchilar: {total_users}",
         f"✅ Bugun faol: {total_active}",
-        f"📖 Jami oyatlar: {total_verses}",
-        f"🔄 Jami takrorlar: {total_reps}",
+        f"📖 Jami yangi oyatlar: {total_verses}",
         f"⏱ Jami vaqt: {total_mins} daqiqa",
         "══════════════════════════",
         "👤 FAOL FOYDALANUVCHILAR:",
@@ -575,10 +573,17 @@ async def send_admin_daily_report(bot=None, admin_id: int = None):
     ]
 
     for r in active_rows:
+        # repetitions: 21 per new ayah (3+7+11) + 5×N from accumulation rounds
+        new_ayahs = r['verses']
+        acc_reps  = max(0, r['reps'] - new_ayahs * 21)  # reps beyond 3+7+11 = accumulation
+        acc_count = acc_reps // 5                        # each accumulation round = 5 reps per ayah
+        detail = f"📖 {new_ayahs} yangi oyat"
+        if acc_count > 0:
+            detail += f" | 🔁 {acc_count} takrorlash"
+        mins_str = f" | ⏱ {r['mins']}d" if r['mins'] > 0 else ""
         lines.append(
             f"• {r['name']} ({r['uname']})\n"
-            f"  📖 {r['verses']} oyat | 🔄 {r['reps']} takror | "
-            f"⏱ {r['mins']}d | +{r['himmat']} XP"
+            f"  {detail}{mins_str} | +{r['himmat']} XP"
         )
 
     lines.append("══════════════════════════")

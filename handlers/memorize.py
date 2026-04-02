@@ -511,7 +511,11 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         _minutes = 5  # fallback
 
-    add_activity_to_period_safe(user_id, 1, 3+7+11, _minutes, points_for_repetition(11), [session.get("surah_name", "")])
+    _total_himmat = (
+        points_for_repetition(3) + points_for_repetition(7) +
+        points_for_repetition(11) + points_for_ayah_complete()
+    )
+    add_activity_to_period_safe(user_id, 1, 3+7+11, _minutes, _total_himmat, [session.get("surah_name", "")])
 
     from datetime import date as _date
     _today_key = f"_streak_updated_{_date.today().isoformat()}"
@@ -636,9 +640,12 @@ async def accumulation_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
 
     acc = session.get("accumulated_ayahs", [])
-    level_up = award_points(user_id, points_for_accumulation(len(acc)), "accumulation")
+    acc_himmat = points_for_accumulation(len(acc))
+    level_up = award_points(user_id, acc_himmat, "accumulation")
     if level_up:
         await context.bot.send_message(chat_id, level_up_message(level_up[1]))
+    # Log accumulation round in stats (repetitions = acc_count × 5, 0 new verses)
+    add_activity_to_period_safe(user_id, 0, len(acc) * 5, 0, acc_himmat, [session.get("surah_name", "")])
 
     # Checkpoint every 5 ayahs
     if len(acc) > 0 and len(acc) % 5 == 0:

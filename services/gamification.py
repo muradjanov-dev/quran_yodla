@@ -132,8 +132,11 @@ def points_for_daily_login() -> int:
 # ─── Apply Points ─────────────────────────────────────────────────────────────
 
 def award_points(user_id: int, points: int, reason: str = ""):
-    """Add himmat points to user and update leaderboard."""
+    """Add himmat points to user and update leaderboard.
+    Premium users get 2x points automatically.
+    """
     from services.firebase_service import get_user, update_user, update_leaderboard_entry
+    from services.premium_service import is_premium
     from google.cloud.firestore_v1 import Increment
 
     if points <= 0:
@@ -142,6 +145,10 @@ def award_points(user_id: int, points: int, reason: str = ""):
     user = get_user(user_id)
     if not user:
         return
+
+    # 2x multiplier for premium users
+    if is_premium(user):
+        points = points * 2
 
     old_points = user.get("stats", {}).get("himmat_points", 0)
     new_points = old_points + points

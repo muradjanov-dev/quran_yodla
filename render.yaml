@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: quran-yodla-bot
+    env: python
+    region: frankfurt
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: WEBHOOK_URL
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: FIREBASE_CREDENTIALS
+        sync: false
+      - key: FIREBASE_STORAGE_BUCKET
+        value: quron-yodlaymiz.firebasestorage.app
+      - key: PORT
+        value: 10000
+    healthCheckPath: /health

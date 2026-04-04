@@ -133,8 +133,10 @@ def ayah_progress_message(surah_name: str, completed: int, total: int) -> str:
 
 def limit_reached_message() -> str:
     return (
-        "⚠️ Bugungi bepul limitingiz tugadi (5/5 oyat).\n\n"
-        "💎 Premium bilan kuniga 1000+ oyat yodlang!"
+        "📕 Bugungi 5 ta bepul oyatingizni yodladingiz! Ma sha ALLOH!\n\n"
+        "💎 Premium bilan CHEKSIZ yodlang — 17 900 so'm/oy\n"
+        "⚡ + har yodlashda 2x Himmat ball!\n"
+        "🚀 + Yangi funksiyalar birinchi bo'lib!"
     )
 
 
@@ -226,20 +228,43 @@ def share_result_message(data: dict, bot_username: str) -> str:
 # ─── Leaderboard ──────────────────────────────────────────────────────────────
 
 def leaderboard_message(entries: list, user_id: int, user_rank: int,
-                        user_entry: Optional[dict] = None) -> str:
-    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-    lines  = [
+                        user_entry: Optional[dict] = None,
+                        period: str = "all",
+                        viewer_id: int = None,
+                        anon_ids: set = None) -> str:
+    medals   = {1: "🥇", 2: "🥈", 3: "🥉"}
+    anon_ids = anon_ids or set()
+    period_labels = {
+        "all":   "UMUMIY REYTING",
+        "day":   "BUGUNGI REYTING",
+        "week":  "HAFTALIK REYTING",
+        "month": "OYLIK REYTING",
+        "year":  "YILLIK REYTING",
+    }
+    period_label = period_labels.get(period, "UMUMIY REYTING")
+    lines = [
         "🏆 FAOLLAR REYTINGI",
         "─────────────────────────────",
-        "TOP 50 — OYLIK REYTING",
+        f"TOP 50 — {period_label}",
         "─────────────────────────────",
     ]
 
+    if not entries:
+        lines.append("🗓 Bu davrda hali faol foydalanuvchi yo'q.")
+        lines.append("─────────────────────────────")
+        return "\n".join(lines)
+
+    viewer = viewer_id or user_id
     for i, e in enumerate(entries[:50], 1):
-        name   = (e.get("full_name") or "Anonim")[:18]
+        uid    = e.get("user_id")
+        is_me  = uid == user_id
+        # Anonymous: show real name only to the user themselves
+        if uid in anon_ids and uid != viewer:
+            name = "🫥 Anonim"
+        else:
+            name = (e.get("full_name") or "Anonim")[:18]
         verses = e.get("total_verses", 0)
         himmat = e.get("himmat_points", 0)
-        is_me  = e.get("user_id") == user_id
 
         if i <= 3:
             prefix = f"{medals[i]} #{i}"
@@ -265,6 +290,7 @@ def leaderboard_message(entries: list, user_id: int, user_rank: int,
     return "\n".join(lines)
 
 
+
 # ─── Premium ──────────────────────────────────────────────────────────────────
 
 def premium_menu_message(is_active: bool, expiry: Optional[str]) -> str:
@@ -274,23 +300,20 @@ def premium_menu_message(is_active: bool, expiry: Optional[str]) -> str:
         f"{status}\n\n"
         f"──────────────────\n"
         f"🆓 BEPUL:\n"
-        f"  • Kuniga 5 oyat\n"
-        f"  • Barcha qorilar\n"
-        f"  • Asosiy statistika\n"
-        f"  • Reyting\n\n"
-        f"💎 PREMIUM — 10,000 so'm/oy:\n"
-        f"  • Limitsiz oyat ♾️\n"
-        f"  • Barcha qorilar\n"
-        f"  • To'liq statistika\n"
-        f"  • Reyting\n\n"
+        f"  • Kuniga 5 oyat yodlash\n"
+        f"  • Reyting va statistika\n"
+        f"  • Jamoaviy Xatm\n\n"
+        f"💎 PREMIUM (17 900 so'm/oy):\n"
+        f"  ✔ CHEKSIZ oyat yodlash (30 kun)\n"
+        f"  ✔ ⚡ 2x Himmat ball har yodlashda\n"
+        f"  ✔ 🚀 Yangi funksiyalar birinchi bo'lib\n"
+        f"  ✔ Premium qori ovozlari\n"
+        f"  ✔ Kunlik motivatsion tahlil\n"
+        f"  ✔ VIP belgisi va ajralib turish\n\n"
+        f"🎁 Yoki: 1 do'st taklif qiling → 1 kun bepul!\n\n"
         f"──────────────────\n"
-        f"TO'LOV:\n"
-        f"💳 5614 6830 0539 3277\n"
-        f"👤 M.N.\n\n"
-        f"🎁 Har bir premium, imkoniyati bo'lmagan bo'lajak qorilar uchun Bepul Quron yodlash funksiya va imkoniyatlari ko'payishiga va loyihani rivojlanishiga yordam beradi. "
-        f"To'lov qilgach, chekni yuboring 👇"
+        f"📞 To'lov va faollashtirish uchun adminiga murojaat qiling."
     )
-
 
 def premium_trial_offer() -> str:
     return (

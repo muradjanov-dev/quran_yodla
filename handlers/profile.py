@@ -99,12 +99,13 @@ async def settings_notif_toggle(update: Update, context: ContextTypes.DEFAULT_TY
     current = db_user.get("notification_settings", {}).get("enabled", True)
     new_state = not current
     update_user(user_id, {"notification_settings.enabled": new_state})
-    count = db_user.get("notification_settings", {}).get("daily_count", 1)
-    icon = "🔔" if new_state else "🔕"
-    status = "yoqildi" if new_state else "o'chirildi"
+    count   = db_user.get("notification_settings", {}).get("daily_count", 1)
+    lb_anon = db_user.get("lb_anonymous", False)
+    icon    = "🔔" if new_state else "🔕"
+    status  = "yoqildi" if new_state else "o'chirildi"
     try:
         await query.message.edit_reply_markup(
-            reply_markup=settings_keyboard(new_state, count)
+            reply_markup=settings_keyboard(new_state, count, lb_anon)
         )
     except Exception:
         pass
@@ -173,6 +174,29 @@ async def settings_lang(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer("🔧 Til o'zgartirish tez orada qo'shiladi!", show_alert=True)
 
 
+async def settings_lb_anon_toggle(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Toggle lb_anonymous — hides the user's name in leaderboard and top-5 reports."""
+    query   = update.callback_query
+    user_id = query.from_user.id
+    from services.firebase_service import get_user, update_user
+    db_user = get_user(user_id)
+    lb_anon = db_user.get("lb_anonymous", False) if db_user else False
+    new_val = not lb_anon
+    update_user(user_id, {"lb_anonymous": new_val})
+    msg = "🫥 Ismingiz reyting va hisobotlarda yashirildi" if new_val else "👁 Ismingiz reytingda ko'rinadi"
+    await query.answer(msg, show_alert=True)
+    # Refresh settings panel
+    if db_user:
+        notif_enabled = db_user.get("notification_settings", {}).get("enabled", True)
+        count         = db_user.get("notification_settings", {}).get("daily_count", 1)
+        try:
+            await query.message.edit_reply_markup(
+                reply_markup=settings_keyboard(notif_enabled, count, new_val)
+            )
+        except Exception:
+            pass
+
+
 async def profile_settings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Legacy: redirect to settings."""
     await show_settings(update, context)
@@ -201,7 +225,7 @@ async def profile_back_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 def register_profile_handlers(app):
-    app.add_handler(MessageHandler(filters.Regex("^📊 Sahifam$"),    show_profile))
+    app.add_handler(MessageHandler(filters.Regex("^📊 Mening sahifam$"), show_profile))
     app.add_handler(MessageHandler(filters.Regex("^⚙️ Sozlamalar$"), show_settings))
     app.add_handler(CallbackQueryHandler(profile_period_callback,    pattern="^profile_period_"))
     app.add_handler(CallbackQueryHandler(profile_share_callback,     pattern="^profile_share$"))
@@ -213,3 +237,4 @@ def register_profile_handlers(app):
     app.add_handler(CallbackQueryHandler(settings_back,              pattern="^settings_back$"))
     app.add_handler(CallbackQueryHandler(settings_referral,          pattern="^settings_referral$"))
     app.add_handler(CallbackQueryHandler(settings_lang,              pattern="^settings_lang$"))
+    app.add_handler(CallbackQueryHandler(settings_lb_anon_toggle,    pattern="^settings_lb_anon_toggle$"))

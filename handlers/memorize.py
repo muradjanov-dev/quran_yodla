@@ -291,9 +291,20 @@ async def _send_current_ayah(chat_id: int, context: ContextTypes.DEFAULT_TYPE, u
     start_ayah  = session.get("start_ayah", 1)
     next_index  = start_ayah + len(acc_ayahs)
 
+    # ━━━ FREE LIMIT CHECK — always BEFORE fetching ayah to prevent API error ━━━
+    db_user = get_user(user_id)
+    if not is_premium(db_user):
+        daily_count = get_daily_ayah_count(user_id)
+        if daily_count >= DAILY_FREE_LIMIT:
+            await bot.send_message(chat_id, limit_reached_message(),
+                                   reply_markup=limit_reached_keyboard())
+            close_session(session.get("session_id", ""))
+            return ConversationHandler.END
+
     ayah_data = get_ayah(surah_num, next_index)
     if not ayah_data:
-        await bot.send_message(chat_id, "API xatoligi. Iltimos, qayta urinib ko'ring.")
+        await bot.send_message(chat_id,
+            "⚠️ Oyat ma'lumotlari yuklanmadi. Iltimos, birozdan so'ng qayta urining.")
         return ConversationHandler.END
 
     surah_info  = get_surah_by_number(surah_num)
@@ -555,14 +566,13 @@ async def rep_11_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["_prog_cache"] = _prog_cache
 
     # Free user daily limit check
+    # (Also checked at start of _send_current_ayah, but we close session here too)
     db_user = get_user(user_id)
     if not is_premium(db_user):
         daily_count = get_daily_ayah_count(user_id)
         if daily_count >= DAILY_FREE_LIMIT:
-            await context.bot.send_message(chat_id, limit_reached_message(),
-                                            reply_markup=limit_reached_keyboard())
             close_session(session["session_id"])
-            return ConversationHandler.END
+            return ConversationHandler.END  # _send_current_ayah will show the message
 
     # Show surah progress
     surah_num  = session.get("surah_number")

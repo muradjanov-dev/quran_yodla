@@ -195,6 +195,11 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await handle_tajweed_text_input(update, context):
         return
 
+    # ── Admin text inputs (broadcast, user search, give premium) ──
+    from src.handlers.admin import handle_admin_text
+    if await handle_admin_text(update, context):
+        return
+
     text = update.message.text.strip()
     awaiting = settings["awaiting_input"]
     from src.handlers.onboarding import main_menu_keyboard

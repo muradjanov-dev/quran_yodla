@@ -14,7 +14,7 @@ def main_menu_keyboard() -> ReplyKeyboardMarkup:
         [
             ["📗 Yodlash"],
             ["👥 Jamoaviy Xatm"],
-            ["📊 Sahifam",   "🏆 Reyting"],
+            ["📊 Mening sahifam",   "🏆 Reyting"],
             ["🎧 Tinglash",  "💎 Premium"],
             ["⚙️ Sozlamalar", "📞 Murojaat"],
         ],
@@ -197,8 +197,9 @@ def checkpoint_keyboard() -> InlineKeyboardMarkup:
 
 def limit_reached_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💎 Premium olish",         callback_data="open_premium")],
-        [InlineKeyboardButton("⏰ Ertaga davom etish",     callback_data="memo_tomorrow")],
+        [InlineKeyboardButton("💎 Premium olish",              callback_data="open_premium")],
+        [InlineKeyboardButton("🤝 Do'st taklif → 1 kun Premium",  callback_data="refer_for_premium")],
+        [InlineKeyboardButton("⏰ Ertaga davom etish",              callback_data="memo_tomorrow")],
     ])
 
 
@@ -269,14 +270,18 @@ def admin_premium_decision_keyboard(req_id: str) -> InlineKeyboardMarkup:
 
 # ─── Leaderboard ──────────────────────────────────────────────────────────────
 
-def leaderboard_period_keyboard(active: str = "month") -> InlineKeyboardMarkup:
-    periods = [("📅 Haftalik", "week"), ("📆 Oylik", "month"),
-               ("📅 Yillik", "year"), ("🏆 Umumiy", "all")]
-    row = []
-    for label, key in periods:
-        text = f"[{label}]" if key == active else label
-        row.append(InlineKeyboardButton(text, callback_data=f"lb_{key}"))
-    return InlineKeyboardMarkup([row])
+def leaderboard_period_keyboard(active: str = "all") -> InlineKeyboardMarkup:
+    row1_periods = [("📅 Bugun", "day"), ("📆 Hafta", "week"), ("📆 Oy", "month")]
+    row2_periods = [("📅 Yil", "year"), ("🏆 Umumiy", "all")]
+    row1 = [
+        InlineKeyboardButton(f"[{lb}]" if k == active else lb, callback_data=f"lb_{k}")
+        for lb, k in row1_periods
+    ]
+    row2 = [
+        InlineKeyboardButton(f"[{lb}]" if k == active else lb, callback_data=f"lb_{k}")
+        for lb, k in row2_periods
+    ]
+    return InlineKeyboardMarkup([row1, row2])
 
 
 # ─── Referral ─────────────────────────────────────────────────────────────────
@@ -464,12 +469,15 @@ def admin_photo_next_keyboard(surah_num: int, surah_name: str, next_ayah: int, t
 
 # ─── Settings ─────────────────────────────────────────────────────────────────
 
-def settings_keyboard(notif_enabled: bool = True, notif_count: int = 1) -> InlineKeyboardMarkup:
+def settings_keyboard(notif_enabled: bool = True, notif_count: int = 1,
+                      lb_anon: bool = False) -> InlineKeyboardMarkup:
     notif_label = ("🔔 Eslatmalar: Yoq" if notif_enabled else "🔕 Eslatmalar: O'ch")
     count_label = f"🔢 Kunlik: {notif_count}x"
+    anon_label  = ("👁 Reytingda Ko'rinish: Yashirin" if lb_anon else "🫥 Reytingda Ismni Yashirish")
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(notif_label,  callback_data="settings_notif_toggle")],
         [InlineKeyboardButton(count_label,  callback_data="settings_notif_count")],
+        [InlineKeyboardButton(anon_label,   callback_data="settings_lb_anon_toggle")],
         [InlineKeyboardButton("👥 Do'st taklif", callback_data="settings_referral")],
         [InlineKeyboardButton("🌐 Til: O'zbek (lotin)", callback_data="settings_lang")],
     ])

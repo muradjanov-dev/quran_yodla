@@ -1,42 +1,33 @@
 """
-notifications.py — Daily notification sender (called by APScheduler).
+notifications.py - Daily notification sender (called by APScheduler).
+Includes: rich Quran/Hadith quotes, xatm daily reminder, pinned message,
+premium badge, 2x premium reminder, motivational Uzbek quotes.
 """
 
 import logging
 import random
-import json
-from pathlib import Path
-from datetime import datetime, timedelta
 import asyncio
+from pathlib import Path
+from datetime import datetime
 import pytz
 
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from services.firebase_service import (
     get_all_notification_enabled_users, get_user,
     get_daily_stats, get_period_stats, log_notification,
     get_user_percentile
 )
-from services.stats_service import format_time
 from utils.keyboards import snooze_keyboard, open_memorize_keyboard
 
-# Quran constants for calculations
 TOTAL_AYAHS = 6236
-AVG_LETTERS_PER_AYAH = 40   # approximate
-HASANA_PER_LETTER = 10       # each letter = 10 hasana (reward)
+AVG_LETTERS_PER_AYAH = 40
+HASANA_PER_LETTER = 10
 
 logger = logging.getLogger(__name__)
-
-DATA_DIR = Path(__file__).parent.parent / "data"
 TZ = pytz.timezone("Asia/Tashkent")
 
 
-def _load_quotes() -> list:
-    with open(DATA_DIR / "daily_quotes.json", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _calc_hafiz_projection(daily_ayahs: int) -> str:
-    """Calculate how many months to become Hafiz at a given daily pace."""
+def _calc_hafiz_projection(daily_ayahs: float) -> str:
     if daily_ayahs <= 0:
         return ""
     days_needed = TOTAL_AYAHS / daily_ayahs
@@ -47,8 +38,6 @@ def _calc_hafiz_projection(daily_ayahs: int) -> str:
 
 
 def _calc_daily_ajr(daily_ayahs: int) -> str:
-    """Approximate daily hasana (ajr) from memorizing ayahs.
-    Hadith: har bir harf uchun 10 ta savob."""
     if daily_ayahs <= 0:
         return "0"
     total = daily_ayahs * AVG_LETTERS_PER_AYAH * HASANA_PER_LETTER
@@ -59,15 +48,134 @@ def _calc_daily_ajr(daily_ayahs: int) -> str:
     return str(total)
 
 
+# ─── Uzbek motivational quotes ────────────────────────────────────────────────
+
+UZBEK_MOTIVATIONAL_QUOTES = [
+    "Har bir oyat — qalbga nur, hayotga baraka. Davom eting!",
+    "Buyuk ishlar kichik qadamlardan boshlanadi. Bugun 1 oyat ham galaba!",
+    "Eng muborak savdo — vaqtingizni Alloh yolida sarflash. Yodlashni davom eting!",
+    "Streak — faqat raqam emas, u sizning sobitqadamligingizdir!",
+    "Ilm daraxti sekin osadi, lekin mevalari aziz boladi. Sabr bilan davom eting!",
+    "Yodlash qiyin tuyulsa — bu sizning osayotganingizning belgisi!",
+    "Quron yodlagan tildan farishtalar yiqilmaydi — bu yolda davom eting!",
+    "Dunyo tirikligida oqiydigan oyatlaringiz oxiratda siz uchun yoruglik boladi.",
+    "Ruhingizni ozuqlantirishga hech qachon vaqt kech emas. Hozir boshlang!",
+    "Quron — ruhing qoriqchisi, qalbing darmoni. Uni yaqin tuting!",
+    "Dunyo fanodir, ammo qilgan yaxshiliqlaringiz abadiydir. Yodlashni davom eting!",
+    "Har kun bir oyat — bir yilda 365 oyat. Hofizlik yoli shu bilan boshlanadi!",
+    "Bazida hayot shoshqaloq boladi. Lekin 5 daqiqa — Alloh uchun topsa boladi.",
+    "Birga yodlayotgan jamoa — bir-biriga gayrat beruvchi quvvat!",
+    "Quron muhabbati — yurakdan chiqib, butun hayotni ozgartiradi.",
+    "Oz narsani muntazam qilish, kop narsani bir marta qilishdan afzal.",
+    "Nafsingizga ruhingizning ozugini bering — Quron tilovat qiling!",
+    "Har bir sabah yangi bir imkoniyat — bugun bitta yangi oyat yodlang!",
+    "Qiyomat kuni amal daftaringizda Quron sahifasi tursin.",
+    "Inson eng qiyin palla Allohga eng yaqin boladi — yodlashda ham shunday!",
+]
+
+
+# ─── Rich Islamic quotes pool ─────────────────────────────────────────────────
+
+QURAN_REWARDS_QUOTES = [
+    {
+        "text": "\"Quron yodda saqlaydigan kishi aziz va motabar farishtalarga hamroh boladi\" "
+                "— Buxoriy va Muslim",
+        "type": "hadith"
+    },
+    {
+        "text": "\"Ichlaringizning eng yaxshisi Quronni organuvchi va orgatuvchisidir\" "
+                "— Buxoriy",
+        "type": "hadith"
+    },
+    {
+        "text": "\"Alloh taolo bu kitob bilan kop qavmlarni koтarib, kop qavmlarni pastlatadi\" "
+                "— Muslim",
+        "type": "hadith"
+    },
+    {
+        "text": "\"Har kim Allohning Kitobidan bitta harf oqisa, unga bitta hasana yoziladi, "
+                "va bitta hasana on hasanaga teng boladi\" — Termiziy",
+        "type": "hadith"
+    },
+    {
+        "text": "\"Hoffizul Quron — Jennat ahlining sarvariga aylanadi. "
+                "U ota-onasini ham jannatga kiritadi\" — Ibn Mojih",
+        "type": "hadith"
+    },
+    {
+        "text": "\"Quron bilan mashgul bolish Allohga tasbih va hamd aytishdan ham afzal\" "
+                "— Salaf al-Solih sozi",
+        "type": "quote"
+    },
+    {
+        "text": "\"Kim Quron oqishni boshlasa, u Alloh bilan muloqot qilayotgan boladi.\" "
+                "— Ibn al-Qayyim",
+        "type": "quote"
+    },
+    {
+        "text": "Biz Quronni eslatma uchun oson qildik, unda teran oylaydiganlar bormi? "
+                "— Qamar surasi, 17-oyat",
+        "type": "ayah"
+    },
+    {
+        "text": "Albatta, bu Quron eng togri yolga boshlab boradi "
+                "— Isro surasi, 9-oyat",
+        "type": "ayah"
+    },
+    {
+        "text": "\"Qiyomat kuni Quron oquvchilarga: 'Oqi va kotar, dunyo hayotida "
+                "qanday tartil bilan oqigan bolsang, shunday oqi. "
+                "Zero, sening maqomingiz oxirgi oqigan oyatingizdadir'\" — Abu Dovud",
+        "type": "hadith"
+    },
+    {
+        "text": "\"Hafiz kishi uchun jannatda 10 ta yaqiniga shafoat qilish haqqi beriladi\" "
+                "— Abu Dovud",
+        "type": "hadith"
+    },
+    {
+        "text": "\"Quronni kecha-kunduz yodlang — u sizning qalbingizni nur bilan toldiradi, "
+                "ruhingizni poklab, hayotingizga baraka bagishlaydi\" — Ibn Masud",
+        "type": "quote"
+    },
+    {
+        "text": "\"Quron oqigan kishiga har bir harf uchun on ta savob yoziladi\" (Termiziy)\n"
+                "Va bu savob Allohning marhamati bilan ziyoda bolishi mumkin!",
+        "type": "hadith"
+    },
+    {
+        "text": "\"Quronni yodlagan kishi oxiratda tojdor bo'ladi, "
+                "ota-onasiga nur sochib turuvchi toj kiydiradi\" — Abu Dovud",
+        "type": "hadith"
+    },
+    {
+        "text": "\"Quron — shifodur. Qalb kasalliklariga davoudur\" — Ibn al-Qayyim",
+        "type": "quote"
+    },
+]
+
+
+def _get_rich_quote() -> dict:
+    return random.choice(QURAN_REWARDS_QUOTES)
+
+
+def _premium_reminder(user: dict) -> str:
+    """Returns a short premium reminder line for non-memorize notifications."""
+    from services.premium_service import is_premium, get_premium_expiry_str
+    if is_premium(user):
+        expiry = get_premium_expiry_str(user) or ""
+        expiry_str = f" | {expiry} gacha" if expiry else ""
+        return f"\n\n\U0001f48e Premium a'zo | \u26a1 2x Himmat ball{expiry_str}"
+    return ""
+
+
 def _build_motivation_text(user: dict) -> str:
-    """Build personalized motivation text with Hafiz projection, ajr, and percentile."""
     name = user.get("full_name", "Do'stim")
     uid = user.get("telegram_id")
     stats = user.get("stats", {})
     total_verses = stats.get("total_verses_read", 0)
     remaining = max(TOTAL_AYAHS - total_verses, 0)
 
-    # Calculate user's average daily pace
     reg_date = user.get("registration_date")
     now = datetime.now(TZ)
     if reg_date and hasattr(reg_date, "astimezone"):
@@ -76,77 +184,87 @@ def _build_motivation_text(user: dict) -> str:
         days_active = 1
     avg_daily = total_verses / days_active if days_active > 0 else 0
 
-    percentile = get_user_percentile(uid) if uid else 0
+    try:
+        percentile = get_user_percentile(uid) if uid else 0
+    except Exception:
+        percentile = 0
 
-    lines = [f"📊 {name}, sizning shaxsiy hisobingiz:\n"]
+    lines = [f"\U0001f4ca {name}, sizning shaxsiy hisobingiz:\n"]
 
     if total_verses == 0:
-        # New user — projection based on different commitments
         lines.append("Siz hali yodlashni boshlamadingiz.\n")
-        lines.append("📌 Agar har kuni shuncha oyat yodlasangiz:\n")
+        lines.append("\U0001f4cc Agar har kuni shuncha oyat yodlasangiz:\n")
         for daily in [3, 5, 10, 20]:
             proj = _calc_hafiz_projection(daily)
-            ajr = _calc_daily_ajr(daily)
-            lines.append(f"  • {daily} oyat/kun → Hofiz {proj}da | kunlik ~{ajr} savob")
-        lines.append(f"\n📿 Hadis: \"Qur'on o'qigan kishiga har bir harf uchun "
-                      f"10 ta savob yoziladi\" (Termiziy)")
-        lines.append(f"\n💪 Birinchi qadamni qo'ying — 1 oyat ham katta boshlang'ich!")
+            ajr  = _calc_daily_ajr(daily)
+            lines.append(f"  \u2022 {daily} oyat/kun \u2192 Hofiz {proj}da | umid qilingan ~{ajr} hasana")
+        lines.append(
+            f"\n\U0001f4bf Hadis: \"Quron oqigan kishiga har bir harf uchun "
+            f"10 ta savob yoziladi\" (Termiziy)\n"
+            f"   (Alloh istaganicha, ixlosga qarab kam yoki ziyoda qilishga qodir)"
+        )
+        lines.append(f"\n\U0001f4aa Birinchi qadamni qo'ying \u2014 1 oyat ham katta boshlang'ich!")
     else:
-        # Active user — personalized stats
         if avg_daily >= 1:
             proj = _calc_hafiz_projection(avg_daily)
-            lines.append(f"📖 Jami yodlangan: {total_verses:,} / {TOTAL_AYAHS:,} oyat")
-            lines.append(f"📈 O'rtacha tezlik: {avg_daily:.1f} oyat/kun")
-            lines.append(f"🕌 Shu tezlikda Hofiz bo'lasiz: ~{proj}")
+            lines.append(f"\U0001f4d6 Jami yodlangan: {total_verses:,} / {TOTAL_AYAHS:,} oyat")
+            lines.append(f"\U0001f4c8 O'rtacha tezlik: {avg_daily:.1f} oyat/kun")
+            lines.append(f"\U0001f54c Shu tezlikda Hofiz bo'lasiz: ~{proj}")
         else:
-            lines.append(f"📖 Jami yodlangan: {total_verses:,} oyat")
-            lines.append(f"⏳ Qolgan: {remaining:,} oyat")
+            lines.append(f"\U0001f4d6 Jami yodlangan: {total_verses:,} oyat")
+            lines.append(f"\u23f3 Qolgan: {remaining:,} oyat")
 
-        # Daily ajr calculation
         daily_pace = max(avg_daily, 1)
         ajr = _calc_daily_ajr(int(daily_pace))
-        lines.append(f"\n📿 Kunlik taxminiy savob: ~{ajr} hasana")
-        lines.append(f"   (har harf = 10 savob, Termiziy rivoyati)")
+        lines.append(
+            f"\n\U0001f4bf Umid qilingan kunlik savob: ~{ajr} hasana"
+            f"\n   (Termiziy rivoyati asosida; Alloh istaganicha,"
+            f"\n    ixlosga qarab kam yoki ziyoda qilishga qodir)"
+        )
 
-        # Percentile ranking
         if percentile > 0:
-            lines.append(f"\n🏅 Siz foydalanuvchilarning {percentile}% dan oldinda!")
+            lines.append(f"\n\U0001f3c5 Siz foydalanuvchilarning {percentile}% dan oldinda!")
 
-        # Faster projection
         if avg_daily < 10:
             faster_daily = min(int(avg_daily) + 5, 20)
             faster_proj = _calc_hafiz_projection(faster_daily)
-            lines.append(f"\n💡 Agar kuniga {faster_daily} oyat yodlasangiz → Hofiz {faster_proj}da!")
+            lines.append(f"\n\U0001f4a1 Agar kuniga {faster_daily} oyat yodlasangiz \u2192 Hofiz {faster_proj}da!")
 
     return "\n".join(lines)
 
 
 def _build_notification(user: dict) -> tuple:
     """Returns (text, keyboard, notif_type) for the notification."""
-    name    = user.get("full_name", "Do'stim")
-    stats   = user.get("stats", {})
-    streak  = stats.get("current_streak_days", 0)
-    today   = get_daily_stats(user["telegram_id"])
-    t_verses= today.get("verses_read", 0)
+    name     = user.get("full_name", "Do'stim")
+    stats    = user.get("stats", {})
+    streak   = stats.get("current_streak_days", 0)
+    today    = get_daily_stats(user["telegram_id"])
+    t_verses = today.get("verses_read", 0)
 
-    quotes = _load_quotes()
-
-    # Haftalik hisobot (Dushanba)
     now = datetime.now(TZ)
     if now.weekday() == 0 and now.hour < 10:
         notif_type = "weekly"
-    elif streak >= 3 and random.random() < 0.4:
+    elif streak >= 3 and random.random() < 0.35:
         notif_type = "streak"
-    elif random.random() < 0.3:
-        notif_type = "motivation"  # 30% chance for personalized stats
+    elif random.random() < 0.2:
+        notif_type = "motivation"
     else:
-        notif_type = random.choice(["motivational", "quote", "hadith", "ayah", "reward"])
+        notif_type = random.choice([
+            "motivational_uz", "quote", "hadith", "ayah",
+            "reward", "quran_reward", "quran_reward",
+        ])
 
     if notif_type == "streak" and streak >= 1:
+        streak_emojis = ["\U0001f525", "\u2b50", "\U0001f4aa", "\U0001f31f", "\U0001f3c6"]
+        emoji = streak_emojis[min(streak // 7, len(streak_emojis) - 1)]
+        prem_line = _premium_reminder(user)
         text = (
-            f"🌟 {name}, {streak}-kunlik streakingiz bor!\n\n"
+            f"{emoji} {name}, {streak}-kunlik streakingiz bor!\n\n"
             f"Bugun ham bir oyat yodlasangiz streak saqlanadi.\n"
-            f"Uzmaslik uchun hoziroq 1 daqiqa vaqt ajrating!"
+            f"Uzmaslik uchun hoziroq 1 daqiqa vaqt ajrating!\n\n"
+            f"\U0001f4bf \"Ichlaringizning eng yaxshisi Quronni organuvchi "
+            f"va orgatuvchisidir\" \u2014 Buxoriy"
+            f"{prem_line}"
         )
         keyboard = snooze_keyboard()
 
@@ -154,90 +272,138 @@ def _build_notification(user: dict) -> tuple:
         text = _build_motivation_text(user)
         keyboard = open_memorize_keyboard()
 
-    elif notif_type == "quote":
-        quote_items = [q for q in quotes if q["type"] == "quote"]
-        q = random.choice(quote_items) if quote_items else quotes[0]
+    elif notif_type == "motivational_uz":
+        mot = random.choice(UZBEK_MOTIVATIONAL_QUOTES)
+        prem_line = _premium_reminder(user)
         text = (
-            f"🌙 Assalomu alaykum, {name}!\n\n"
-            f"💬 {q['author']}:\n\"{q['text']}\"\n\n"
-            f"Bugungi progress: {t_verses} oyat yodladingiz"
+            f"\U0001f305 Assalomu alaykum, {name}!\n\n"
+            f"{mot}\n\n"
+            f"Bugun ham davom etamizmi? \U0001f4aa"
+            f"{prem_line}"
+        )
+        keyboard = open_memorize_keyboard()
+
+    elif notif_type == "quran_reward":
+        q = _get_rich_quote()
+        ajr_line = ""
+        total_v = stats.get("total_verses_read", 0)
+        if total_v > 0:
+            total_ajr = total_v * AVG_LETTERS_PER_AYAH * HASANA_PER_LETTER
+            ajr_str = f"{total_ajr:,}" if total_ajr < 1_000_000 else f"{total_ajr/1_000_000:.1f} mln"
+            ajr_line = (
+                f"\n\n\U0001f4d6 Siz {total_v:,} oyat yodladingiz!"
+                f"\n\U0001f4bf Umid qilingan savob: ~{ajr_str} hasana"
+                f"\n   \u2192 Alloh istaganicha, ixlosga qarab kam yoki ziyoda qilishga qodir"
+            )
+        prem_line = _premium_reminder(user)
+        text = (
+            f"\U0001f319 Assalomu alaykum, {name}!\n\n"
+            f"\U0001f48e Quron ahliga berilgan in'om:\n\n"
+            f"{q['text']}"
+            f"{ajr_line}\n\n"
+            f"Bugun ham davom eting \u2014 har oyat sizning oxiratingizga nurdur! \U0001f932"
+            f"{prem_line}"
+        )
+        keyboard = open_memorize_keyboard()
+
+    elif notif_type == "quote":
+        q = random.choice([x for x in QURAN_REWARDS_QUOTES if x["type"] == "quote"]
+                          or QURAN_REWARDS_QUOTES)
+        prem_line = _premium_reminder(user)
+        text = (
+            f"\U0001f319 Assalomu alaykum, {name}!\n\n"
+            f"\U0001f4ac {q['text']}\n\n"
+            f"Bugun ham davom etamizmi? \U0001f4aa"
+            f"{prem_line}"
         )
         keyboard = open_memorize_keyboard()
 
     elif notif_type == "hadith":
-        hadith_items = [q for q in quotes if q["type"] == "hadith"]
-        q = random.choice(hadith_items) if hadith_items else quotes[0]
+        pool = [x for x in QURAN_REWARDS_QUOTES if x["type"] == "hadith"]
+        q = random.choice(pool) if pool else _get_rich_quote()
+        prem_line = _premium_reminder(user)
         text = (
-            f"📿 Assalomu alaykum, {name}!\n\n"
-            f"Hadisi sharif — {q['author']}:\n\n"
+            f"\U0001f4bf Assalomu alaykum, {name}!\n\n"
+            f"Hadisi sharif:\n\n"
             f"{q['text']}\n\n"
-            f"Bugun ham Qur'on yodlashni davom eting! 🤲"
+            f"Bugun ham Quron yodlashni davom eting! \U0001f932"
+            f"{prem_line}"
         )
         keyboard = open_memorize_keyboard()
 
     elif notif_type == "ayah":
-        ayah_items = [q for q in quotes if q["type"] == "ayah"]
-        q = random.choice(ayah_items) if ayah_items else quotes[0]
+        pool = [x for x in QURAN_REWARDS_QUOTES if x["type"] == "ayah"]
+        q = random.choice(pool) if pool else _get_rich_quote()
+        prem_line = _premium_reminder(user)
         text = (
-            f"📖 Assalomu alaykum, {name}!\n\n"
-            f"Qur'oni Karimdan — {q['author']}:\n\n"
+            f"\U0001f4d6 Assalomu alaykum, {name}!\n\n"
+            f"Quron oyati:\n\n"
             f"{q['text']}\n\n"
-            f"Alloh bizni Qur'on ahllaridan qilsin! 🌟"
+            f"Alloh bizni Quron ahllaridan qilsin! \U0001f31f"
+            f"{prem_line}"
         )
         keyboard = open_memorize_keyboard()
 
     elif notif_type == "weekly":
         week_stats = get_period_stats(user["telegram_id"], "week")
+        prem_line = _premium_reminder(user)
         text = (
-            f"📊 HAFTALIK HISOBOT, {name}!\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"\U0001f4ca HAFTALIK HISOBOT, {name}!\n\n"
+            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n"
             f"Bu hafta:\n"
-            f"📖 Oyatlar: {week_stats.get('verses_read', 0)}\n"
-            f"🔄 Takrorlar: {week_stats.get('repetitions', 0)}\n"
-            f"⏱ Vaqt: {week_stats.get('minutes', 0)} daqiqa\n"
-            f"💎 Himmat: +{week_stats.get('himmat_earned', 0)}\n"
-            f"━━━━━━━━━━━━━━━━━━━━"
+            f"\U0001f4d6 Oyatlar: {week_stats.get('verses_read', 0)}\n"
+            f"\U0001f504 Takrorlar: {week_stats.get('repetitions', 0)}\n"
+            f"\u23f1 Vaqt: {week_stats.get('minutes', 0)} daqiqa\n"
+            f"\U0001f48e Himmat: +{week_stats.get('himmat_earned', 0)}\n"
+            f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"
+            f"{prem_line}"
         )
         keyboard = open_memorize_keyboard()
 
     elif notif_type == "reward":
-        # Calculate personalized ajr
         total_v = stats.get("total_verses_read", 0)
         total_ajr = total_v * AVG_LETTERS_PER_AYAH * HASANA_PER_LETTER
         ajr_str = f"{total_ajr:,}" if total_ajr < 1_000_000 else f"{total_ajr/1_000_000:.1f} million"
+        q = _get_rich_quote()
+        prem_line = _premium_reminder(user)
         text = (
-            f"⭐ Assalomu alaykum, {name}!\n\n"
-            f"📿 Alloh taolo va'da qilgan:\n"
-            f"\"Qur'on o'qigan kishiga har bir harf uchun "
+            f"\u2b50 Assalomu alaykum, {name}!\n\n"
+            f"\U0001f4bf Alloh taolo va'da qilgan:\n"
+            f"\"Quron oqigan kishiga har bir harf uchun "
             f"10 ta savob yoziladi\" (Termiziy)\n\n"
-            f"📖 Siz {total_v:,} oyat yodladingiz\n"
-            f"📿 Taxminiy savobingiz: ~{ajr_str} hasana!\n\n"
-            f"Bugun ham bir oyat yodlang — ajr bekor ketmaydi! 🤲"
+            f"\U0001f4d6 Siz {total_v:,} oyat yodladingiz\n"
+            f"\U0001f4bf Umid qilingan savob: ~{ajr_str} hasana\n"
+            f"   (Alloh istaganicha, ixlosga qarab kam yoki ziyoda qilishga qodir)\n\n"
+            f"\U0001f48e Qo'shimcha ilhom:\n{q['text']}\n\n"
+            f"Bugun ham bir oyat yodlang \u2014 ajr bekor ketmaydi! \U0001f932"
+            f"{prem_line}"
         )
         keyboard = open_memorize_keyboard()
 
-    else:  # motivational
-        mot_items = [q for q in quotes if q["type"] == "motivational"]
-        q = random.choice(mot_items) if mot_items else quotes[0]
+    else:
+        mot = random.choice(UZBEK_MOTIVATIONAL_QUOTES)
+        prem_line = _premium_reminder(user)
         text = (
-            f"🌅 Assalomu alaykum, {name}!\n\n"
-            f"📖 {q['text']}\n\n"
-            f"Bugun ham davom etamizmi? 💪"
+            f"\U0001f305 Assalomu alaykum, {name}!\n\n"
+            f"{mot}\n\n"
+            f"Bugun ham davom etamizmi? \U0001f4aa"
+            f"{prem_line}"
         )
         keyboard = open_memorize_keyboard()
 
     return text, keyboard, notif_type
 
 
+# ─── Main scheduled jobs ──────────────────────────────────────────────────────
+
 async def send_daily_notifications(bot=None):
-    """Main scheduled job: send notifications to all enabled users."""
     if bot is None:
         logger.warning("send_daily_notifications called without bot instance")
         return
 
-    users   = get_all_notification_enabled_users()
-    sent    = 0
-    failed  = 0
+    users  = get_all_notification_enabled_users()
+    sent   = 0
+    failed = 0
 
     for user in users:
         uid = user.get("telegram_id")
@@ -245,26 +411,20 @@ async def send_daily_notifications(bot=None):
             continue
         try:
             text, keyboard, notif_type = _build_notification(user)
-            await bot.send_message(
-                chat_id      = uid,
-                text         = text,
-                reply_markup = keyboard
-            )
+            await bot.send_message(chat_id=uid, text=text, reply_markup=keyboard)
             log_notification(uid, notif_type, text[:80])
             sent += 1
         except Exception as e:
             logger.warning(f"Notification failed for {uid}: {e}")
             failed += 1
-
-        await asyncio.sleep(0.05)  # avoid flood
+        await asyncio.sleep(0.05)
 
     logger.info(f"Daily notifications: sent={sent}, failed={failed}")
 
 
 async def handle_snooze(update: Update, context):
-    """Handles '⏰ Keyinroq eslatish' (2h snooze)."""
     query = update.callback_query
-    await query.answer("2 soatdan so'ng eslatiladi ✅")
+    await query.answer("2 soatdan so'ng eslatiladi \u2705")
     user_id = query.from_user.id
     user    = get_user(user_id)
     if not user:
@@ -272,12 +432,11 @@ async def handle_snooze(update: Update, context):
     name = user.get("full_name", "Do'stim")
 
     async def send_snooze():
-        await asyncio.sleep(7200)  # 2 hours
+        await asyncio.sleep(7200)
         try:
-            from utils.keyboards import open_memorize_keyboard
             await context.bot.send_message(
                 chat_id      = user_id,
-                text         = f"⏰ {name}, 2 soat o'tdi! Yodlashni davom ettirishingiz mumkin 📖",
+                text         = f"\u23f0 {name}, 2 soat otdi! Yodlashni davom ettirishingiz mumkin \U0001f4d6",
                 reply_markup = open_memorize_keyboard()
             )
         except Exception:
@@ -285,47 +444,46 @@ async def handle_snooze(update: Update, context):
 
     asyncio.create_task(send_snooze())
 
-async def handle_memo_tomorrow(update, context):
-    """User taps 'Ertaga davom etish' on limit_reached message."""
+
+async def handle_memo_tomorrow(update: Update, context):
     query = update.callback_query
     await query.answer()
     try:
         await query.message.edit_text(
-            "✅ Ertaga davom etamiz! In shaa ALLOH 🌙\n\n"
-            "Qolgan oyatlaringiz sizni kutmoqda 📖"
+            "\u2705 Ertaga davom etamiz! In shaa ALLOH \U0001f319\n\n"
+            "Qolgan oyatlaringiz sizni kutmoqda \U0001f4d6"
         )
     except Exception:
         pass
 
 
 async def send_xatm_invitation(bot=None):
-    """Periodic broadcast: invite users to join Jamoaviy Xatm."""
     if bot is None:
         return
     from services.firebase_service import get_all_users, get_xatm_stats
-    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
     try:
         stats = get_xatm_stats()
     except Exception:
         stats = {}
+
     active_xatms  = stats.get("active_xatms", 0)
     total_readers = stats.get("total_readers", 0)
 
     text = (
-        "👥 JAMOAVIY XATM\n\n"
-        "Qur'on xatmini jamoa bo'lib birgalikda o'qiymizmi?\n\n"
-        "Har bir ishtirokchi 1 ta juz o'qiydi — birgalikda 30 juz!\n"
-        f"📊 Hozir faol xatmlar: {active_xatms}\n"
-        f"🕌 Jami ishtirokchilar: {total_readers}\n\n"
-        "Alloh barcha Qur'on o'quvchilarni sevadi! 🤲"
+        "\U0001f465 JAMOAVIY XATM\n\n"
+        "Quron xatmini jamoa bo'lib birgalikda o'qiymizmi?\n\n"
+        "Har bir ishtirokchi 1 ta juz o'qiydi \u2014 birgalikda 30 juz!\n"
+        f"\U0001f4ca Hozir faol xatmlar: {active_xatms}\n"
+        f"\U0001f54c Jami ishtirokchilar: {total_readers}\n\n"
+        "Alloh barcha Quron o'quvchilarni sevadi! \U0001f932"
     )
     keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("👥 Jamoaviy Xatmga qo'shilish", callback_data="open_xatm")
+        InlineKeyboardButton("\U0001f465 Jamoaviy Xatmga qo'shilish", callback_data="open_xatm")
     ]])
 
-    users  = get_all_users()
-    sent   = 0
-    failed = 0
+    from services.firebase_service import get_all_users
+    users = get_all_users()
+    sent = failed = 0
     for u in users:
         uid = u.get("telegram_id")
         if not uid:
@@ -339,8 +497,155 @@ async def send_xatm_invitation(bot=None):
     logger.info(f"Xatm invitation: sent={sent}, failed={failed}")
 
 
+async def send_daily_xatm_reminder(bot=None):
+    """
+    Daily xatm reminder for active participants — sent once per day at 09:00.
+    Shows overall progress bar, user's remaining juzs, and encouragement.
+    """
+    if bot is None:
+        return
+    from services.firebase_service import get_user, get_xatm_juzs
+    from firebase_config import db
+
+    if not db:
+        return
+
+    try:
+        active_docs = db.collection("group_xatms").where("status", "==", "active").stream()
+        active_xatms = [d.to_dict() for d in active_docs]
+    except Exception as e:
+        logger.error(f"send_daily_xatm_reminder: {e}")
+        return
+
+    for xatm in active_xatms:
+        xatm_id  = xatm.get("xatm_id")
+        xatm_num = xatm.get("xatm_number", "?")
+        juzs     = get_xatm_juzs(xatm_id)
+
+        total_done = sum(1 for j in juzs if j["status"] == "completed")
+
+        by_user = {}
+        for j in juzs:
+            uid = j.get("user_id")
+            if uid:
+                by_user.setdefault(uid, []).append(j)
+
+        for uid, user_juzs in by_user.items():
+            my_done      = sum(1 for j in user_juzs if j["status"] == "completed")
+            my_remaining = len(user_juzs) - my_done
+            if my_remaining == 0:
+                continue
+
+            user = get_user(uid)
+            name = user.get("full_name", "Do'stim") if user else "Do'stim"
+
+            pct = int(total_done / 30 * 100)
+            bar_filled = int(pct / 5)
+            bar = "\U0001f7e9" * bar_filled + "\u2b1c" * (20 - bar_filled)
+
+            encouragements = [
+                "Tezroq ulushingizni bajarsangiz xatm yanada tezroq yakunlanadi!",
+                "Birgalikda harakat qilsak kuchimiz yanada ortadi!",
+                "Har bir o'qilgan juz 30 kishi nomidan Allohga taqdim etiladi!",
+                "Xatmdoshlaringiz sizni kutmoqda \u2014 birga yakunlaymiz!",
+                "Quron o'qigan tildan farishtalar yiqilmaydi \u2014 davom eting!",
+            ]
+
+            my_juz_nums = sorted(j["juz_number"] for j in user_juzs if j["status"] != "completed")
+            my_juzs_str = ", ".join(str(n) for n in my_juz_nums) if my_juz_nums else "\u2014"
+            enc = random.choice(encouragements)
+
+            text = (
+                f"\U0001f4d6 JAMOAVIY XATM #{xatm_num} \u2014 KUNLIK ESLATMA\n\n"
+                f"Umumiy progress: {total_done}/30 juz \u2705\n"
+                f"[{bar}] {pct}%\n\n"
+                f"Sizda qolgan juzlar: {my_juzs_str} ({my_remaining} ta)\n\n"
+                f"\U0001f4aa {enc}\n\n"
+                f"\U0001f932 Alloh barcha Quron o'quvchilarni sevadi!"
+            )
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("\U0001f4d6 Xatmni davom ettirish", callback_data="open_xatm")
+            ]])
+
+            try:
+                await bot.send_message(chat_id=uid, text=text, reply_markup=keyboard)
+            except Exception as e:
+                logger.warning(f"Xatm reminder to {uid} failed: {e}")
+            await asyncio.sleep(0.05)
+
+    logger.info(f"Daily xatm reminders sent for {len(active_xatms)} active xatm(s)")
+
+
+async def send_pinned_progress_message(bot, user_id: int):
+    """Send or refresh a pinned progress message for the user."""
+    user = get_user(user_id)
+    if not user:
+        return
+
+    from services.premium_service import is_premium
+    stats      = user.get("stats", {})
+    total_v    = stats.get("total_verses_read", 0)
+    himmat     = stats.get("himmat_points", 0)
+    pct        = round(total_v / TOTAL_AYAHS * 100, 2) if total_v else 0
+    bar_filled = int(pct / 5)
+    bar        = "\u2588" * bar_filled + "\u2591" * (20 - bar_filled)
+    name       = user.get("full_name", "Foydalanuvchi")
+    premium    = is_premium(user)
+    badge      = " \U0001f48e Premium" if premium else ""
+    xp_badge   = " (2x \u26a1)" if premium else ""
+
+    text = (
+        f"\U0001f4cc QURON YODLASH PROGRESSI{badge} \u2014 {name}\n\n"
+        f"\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n"
+        f"\u2502  {pct:.2f}% yodlandi\n"
+        f"\u2502  [{bar}]\n"
+        f"\u2502  {total_v:,} / {TOTAL_AYAHS:,} oyat\n"
+        f"\u2502  \U0001f48e Himmat: {himmat:,} ball{xp_badge}\n"
+        f"\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\n"
+        f"Davom eting \u2014 Hofiz bo'lish mumkin! \U0001f31f"
+    )
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("\U0001f4d7 Yodlashni davom ettirish", callback_data="open_memorize")
+    ]])
+
+    try:
+        msg = await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+        try:
+            await bot.pin_chat_message(chat_id=user_id, message_id=msg.message_id,
+                                       disable_notification=True)
+            from services.firebase_service import update_user
+            update_user(user_id, {"pinned_progress_msg_id": msg.message_id})
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"send_pinned_progress_message error for {user_id}: {e}")
+
+
+async def refresh_all_pinned_messages(bot=None):
+    if bot is None:
+        return
+    from services.firebase_service import get_all_users
+
+    users = get_all_users()
+    updated = 0
+    for u in users:
+        uid = u.get("telegram_id")
+        if not uid:
+            continue
+        old_msg_id = u.get("pinned_progress_msg_id")
+        if old_msg_id:
+            try:
+                await bot.delete_message(chat_id=uid, message_id=old_msg_id)
+            except Exception:
+                pass
+        await send_pinned_progress_message(bot, uid)
+        updated += 1
+        await asyncio.sleep(0.1)
+    logger.info(f"Refreshed pinned progress for {updated} users")
+
+
 async def send_daily_top5(bot=None):
-    """Send top-5 users of the day to all users. Runs daily at 22:00 Tashkent."""
+    """Send top-5 users of the day to all users. Runs daily at 22:00."""
     if bot is None:
         return
     from services.firebase_service import get_all_users
@@ -357,9 +662,10 @@ async def send_daily_top5(bot=None):
             v  = st.get("verses_read", 0)
             if v > 0:
                 daily.append({
-                    "name":   u.get("full_name", "Anonim"),
-                    "verses": v,
-                    "himmat": st.get("himmat_earned", 0),
+                    "name":    u.get("full_name", "Anonim"),
+                    "verses":  v,
+                    "himmat":  st.get("himmat_earned", 0),
+                    "is_anon": u.get("lb_anonymous", False),
                 })
         except Exception:
             pass
@@ -368,24 +674,23 @@ async def send_daily_top5(bot=None):
         return
 
     daily.sort(key=lambda x: x["verses"], reverse=True)
-    top5 = daily[:5]
-
-    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+    top5   = daily[:5]
+    medals = ["\U0001f947", "\U0001f948", "\U0001f949", "4\ufe0f\u20e3", "5\ufe0f\u20e3"]
     lines  = [
-        "🏆 BUGUNGI TOP-5",
-        "─────────────────────",
+        "\U0001f3c6 BUGUNGI TOP-5",
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
         datetime.now(TZ).strftime("%d.%m.%Y"),
-        "─────────────────────",
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     ]
     for i, e in enumerate(top5):
-        lines.append(f"{medals[i]} {e['name'][:18]} — {e['verses']} oyat")
-    lines.append("─────────────────────")
-    lines.append(f"Jami {len(daily)} kishi bugun yodladi 📖")
+        name = "\U0001f9be Anonim" if e.get("is_anon") else e["name"][:18]
+        lines.append(f"{medals[i]} {name} \u2014 {e['verses']} oyat")
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"Jami {len(daily)} kishi bugun yodladi \U0001f4d6")
     text = "\n".join(lines)
 
-    all_users = users
     sent = 0
-    for u in all_users:
+    for u in users:
         uid = u.get("telegram_id")
         if not uid:
             continue
@@ -399,7 +704,6 @@ async def send_daily_top5(bot=None):
 
 
 async def send_weekly_top10(bot=None):
-    """Send top-10 users of the week every Sunday. All users."""
     if bot is None:
         return
     from services.firebase_service import get_all_users
@@ -416,9 +720,10 @@ async def send_weekly_top10(bot=None):
             v  = st.get("verses_read", 0)
             if v > 0:
                 weekly.append({
-                    "name":   u.get("full_name", "Anonim"),
-                    "verses": v,
-                    "himmat": st.get("himmat_earned", 0),
+                    "name":    u.get("full_name", "Anonim"),
+                    "verses":  v,
+                    "himmat":  st.get("himmat_earned", 0),
+                    "is_anon": u.get("lb_anonymous", False),
                 })
         except Exception:
             pass
@@ -428,19 +733,22 @@ async def send_weekly_top10(bot=None):
 
     weekly.sort(key=lambda x: x["verses"], reverse=True)
     top10  = weekly[:10]
-    medals = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+    medals = ["\U0001f947", "\U0001f948", "\U0001f949",
+              "4\ufe0f\u20e3", "5\ufe0f\u20e3", "6\ufe0f\u20e3",
+              "7\ufe0f\u20e3", "8\ufe0f\u20e3", "9\ufe0f\u20e3", "\U0001f51f"]
     week_label = now.strftime("%d.%m") + " hafta"
     lines = [
-        "🏆 HAFTALIK TOP-10",
-        "─────────────────────",
+        "\U0001f3c6 HAFTALIK TOP-10",
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
         week_label,
-        "─────────────────────",
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     ]
     for i, e in enumerate(top10):
-        lines.append(f"{medals[i]} {e['name'][:18]} — {e['verses']} oyat")
-    lines.append("─────────────────────")
-    lines.append(f"Jami {len(weekly)} kishi bu hafta yodladi 📖")
-    lines.append("Alloh barchadan qabul qilsin! 🤲")
+        name = "\U0001f9be Anonim" if e.get("is_anon") else e["name"][:18]
+        lines.append(f"{medals[i]} {name} \u2014 {e['verses']} oyat")
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"Jami {len(weekly)} kishi bu hafta yodladi \U0001f4d6")
+    lines.append("Alloh barchadan qabul qilsin! \U0001f932")
     text = "\n".join(lines)
 
     sent = 0
@@ -458,7 +766,6 @@ async def send_weekly_top10(bot=None):
 
 
 async def send_monthly_top10(bot=None):
-    """Send top-10 users of the month on last day of month."""
     if bot is None:
         return
     from services.firebase_service import get_all_users
@@ -475,9 +782,10 @@ async def send_monthly_top10(bot=None):
             v  = st.get("verses_read", 0)
             if v > 0:
                 monthly.append({
-                    "name":   u.get("full_name", "Anonim"),
-                    "verses": v,
-                    "himmat": st.get("himmat_earned", 0),
+                    "name":    u.get("full_name", "Anonim"),
+                    "verses":  v,
+                    "himmat":  st.get("himmat_earned", 0),
+                    "is_anon": u.get("lb_anonymous", False),
                 })
         except Exception:
             pass
@@ -487,19 +795,22 @@ async def send_monthly_top10(bot=None):
 
     monthly.sort(key=lambda x: x["verses"], reverse=True)
     top10  = monthly[:10]
-    medals = ["🥇","🥈","🥉","4️⃣","5️⃣","6️⃣","7️⃣","8️⃣","9️⃣","🔟"]
+    medals = ["\U0001f947", "\U0001f948", "\U0001f949",
+              "4\ufe0f\u20e3", "5\ufe0f\u20e3", "6\ufe0f\u20e3",
+              "7\ufe0f\u20e3", "8\ufe0f\u20e3", "9\ufe0f\u20e3", "\U0001f51f"]
     month_label = now.strftime("%B %Y")
     lines = [
-        "🏆 OYLIK TOP-10",
-        "─────────────────────",
+        "\U0001f3c6 OYLIK TOP-10",
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
         month_label,
-        "─────────────────────",
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     ]
     for i, e in enumerate(top10):
-        lines.append(f"{medals[i]} {e['name'][:18]} — {e['verses']} oyat")
-    lines.append("─────────────────────")
-    lines.append(f"Jami {len(monthly)} kishi bu oy yodladi 📖")
-    lines.append("Alloh barchadan qabul qilsin! 🤲")
+        name = "\U0001f9be Anonim" if e.get("is_anon") else e["name"][:18]
+        lines.append(f"{medals[i]} {name} \u2014 {e['verses']} oyat")
+    lines.append("\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    lines.append(f"Jami {len(monthly)} kishi bu oy yodladi \U0001f4d6")
+    lines.append("Alloh barchadan qabul qilsin! \U0001f932")
     text = "\n".join(lines)
 
     sent = 0
@@ -517,12 +828,12 @@ async def send_monthly_top10(bot=None):
 
 
 async def send_admin_daily_report(bot=None, admin_id: int = None):
-    """Send detailed per-user daily report to admin. Only active users shown."""
+    """Detailed per-user daily report to admin with up-to-date stats."""
     if bot is None or admin_id is None:
         return
-    from services.firebase_service import get_all_users
-    now_str = datetime.now(TZ).strftime("%Y-%m-%d")
-    now_disp = datetime.now(TZ).strftime("%d.%m.%Y")
+    from services.firebase_service import get_all_users, get_xatm_stats
+    now_str  = datetime.now(TZ).strftime("%Y-%m-%d")
+    now_disp = datetime.now(TZ).strftime("%d.%m.%Y %H:%M")
 
     users = get_all_users()
     active_rows = []
@@ -540,56 +851,71 @@ async def send_admin_daily_report(bot=None, admin_id: int = None):
         mins   = st.get("minutes", 0)
         himmat = st.get("himmat_earned", 0)
         if verses == 0 and reps == 0:
-            continue  # skip idle users
+            continue
         name = (u.get("full_name") or "Anonim")[:18]
         username = u.get("username", "")
         uname_str = f"@{username}" if username else f"#{uid}"
+        is_premium_flag = u.get("premium", {}).get("is_active", False)
+        streak = u.get("stats", {}).get("current_streak_days", 0)
+        total_verses_all = u.get("stats", {}).get("total_verses_read", 0)
         active_rows.append({
-            "name": name,
-            "uname": uname_str,
-            "verses": verses,
-            "reps": reps,
-            "mins": mins,
-            "himmat": himmat,
+            "name":         name,
+            "uname":        uname_str,
+            "verses":       verses,
+            "reps":         reps,
+            "mins":         mins,
+            "himmat":       himmat,
+            "premium":      is_premium_flag,
+            "streak":       streak,
+            "total_verses": total_verses_all,
         })
 
     active_rows.sort(key=lambda x: x["verses"], reverse=True)
 
+    premium_users = [u for u in users if u.get("premium", {}).get("is_active")]
     total_users   = len(users)
     total_active  = len(active_rows)
     total_verses  = sum(r["verses"] for r in active_rows)
     total_mins    = sum(r["mins"]   for r in active_rows)
+    total_premium = len(premium_users)
+
+    try:
+        xatm_stats = get_xatm_stats()
+    except Exception:
+        xatm_stats = {}
 
     lines = [
-        f"📊 KUNLIK HISOBOT — {now_disp}",
-        "══════════════════════════",
-        f"👥 Jami foydalanuvchilar: {total_users}",
-        f"✅ Bugun faol: {total_active}",
-        f"📖 Jami yangi oyatlar: {total_verses}",
-        f"⏱ Jami vaqt: {total_mins} daqiqa",
-        "══════════════════════════",
-        "👤 FAOL FOYDALANUVCHILAR:",
-        "──────────────────────────",
+        f"\U0001f4ca ADMIN KUNLIK HISOBOT \u2014 {now_disp}",
+        "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550",
+        f"\U0001f465 Jami foydalanuvchilar: {total_users}",
+        f"\U0001f48e Premium: {total_premium}",
+        f"\u2705 Bugun faol: {total_active}",
+        f"\U0001f4d6 Bugun yangi oyatlar: {total_verses}",
+        f"\u23f1 Jami vaqt: {total_mins} daqiqa",
+        f"\U0001f54c Yakunlangan xatmlar: {xatm_stats.get('total_xatms', 0)}",
+        "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550",
+        "\U0001f464 FAOL FOYDALANUVCHILAR:",
+        "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
     ]
 
     for r in active_rows:
-        # repetitions: 21 per new ayah (3+7+11) + 5×N from accumulation rounds
-        new_ayahs = r['verses']
-        acc_reps  = max(0, r['reps'] - new_ayahs * 21)  # reps beyond 3+7+11 = accumulation
-        acc_count = acc_reps // 5                        # each accumulation round = 5 reps per ayah
-        detail = f"📖 {new_ayahs} yangi oyat"
+        acc_reps  = max(0, r["reps"] - r["verses"] * 21)
+        acc_count = acc_reps // 5
+        detail    = f"\U0001f4d6 {r['verses']} yangi oyat"
         if acc_count > 0:
-            detail += f" | 🔁 {acc_count} takrorlash"
-        mins_str = f" | ⏱ {r['mins']}d" if r['mins'] > 0 else ""
+            detail += f" | \U0001f501 {acc_count} takrorlash"
+        mins_str    = f" | \u23f1 {r['mins']}d" if r["mins"] > 0 else ""
+        streak_str  = f" | \U0001f525{r['streak']}" if r["streak"] > 1 else ""
+        premium_str = " \U0001f48e" if r["premium"] else ""
+        total_str   = f" | jami: {r['total_verses']:,}" if r["total_verses"] > 0 else ""
         lines.append(
-            f"• {r['name']} ({r['uname']})\n"
-            f"  {detail}{mins_str} | +{r['himmat']} XP"
+            f"\u2022 {r['name']}{premium_str} ({r['uname']})\n"
+            f"  {detail}{mins_str}{streak_str}{total_str} | +{r['himmat']} XP"
         )
 
-    lines.append("══════════════════════════")
+    lines.append("\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550")
     text = "\n".join(lines)
 
-    # Split if too long (Telegram 4096 char limit)
     chunk_size = 4000
     chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
     for chunk in chunks:
@@ -600,10 +926,43 @@ async def send_admin_daily_report(bot=None, admin_id: int = None):
     logger.info(f"Admin daily report sent: {total_active} active users")
 
 
+async def _refer_for_premium(update, context):
+    """Show referral link when user taps 'Invite friend for 1-day Premium'."""
+    query   = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    user    = get_user(user_id)
+    if not user:
+        return
+    ref_code = user.get("referral_code", "")
+    bot_username = (await context.bot.get_me()).username
+    ref_link = f"https://t.me/{bot_username}?start=ref_{ref_code}"
+    text = (
+        "\U0001f381 DO'ST TAKLIF QILING \u2014 1 KUN PREMIUM OLING!\n\n"
+        "Quyidagi havolani do'stingizga yuboring.\n"
+        "Do'stingiz botga qo'shilsa, sizga avtomatik ravishda\n"
+        "\U0001f48e 1 kunlik BEPUL Premium faollashadi!\n\n"
+        f"\U0001f517 Sizning havolangiz:\n{ref_link}\n\n"
+        "\U0001f4de Har bir taklif uchun +15 Himmat ball ham beriladi!"
+    )
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton(
+            "\U0001f4e4 Havolani ulashish",
+            url=f"https://t.me/share/url?url={ref_link}&text=Quronni+ilmiy+usulda+yodlash!"
+        )
+    ]])
+    try:
+        await query.message.reply_text(text, reply_markup=keyboard)
+    except Exception as e:
+        logger.warning(f"refer_for_premium send failed: {e}")
+
+
 def register_notification_handlers(app):
     from telegram.ext import CallbackQueryHandler
     app.add_handler(CallbackQueryHandler(handle_snooze,        pattern="^snooze_2h$"))
     app.add_handler(CallbackQueryHandler(handle_memo_tomorrow, pattern="^memo_tomorrow$"))
+    app.add_handler(CallbackQueryHandler(_refer_for_premium,   pattern="^refer_for_premium$"))
+
     async def _open_xatm(update, context):
         query = update.callback_query
         await query.answer()

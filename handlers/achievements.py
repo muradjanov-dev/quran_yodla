@@ -342,6 +342,174 @@ ACHIEVEMENTS = [
         "bonus_xp": 300,
         "condition": lambda u, s: u.get("premium", {}).get("is_active", False),
     },
+    # ── Yangi oyatlar (qo'shimcha) ────────────────────────────────────────────
+    {
+        "id": "verses_25",
+        "emoji": "🌿",
+        "title": "25 Oyat",
+        "desc": "25 ta oyat yodladi",
+        "bonus_xp": 150,
+        "condition": lambda u, s: _total_verses(u) >= 25,
+    },
+    {
+        "id": "verses_75",
+        "emoji": "🌺",
+        "title": "75 Oyat",
+        "desc": "75 ta oyat yodladi",
+        "bonus_xp": 350,
+        "condition": lambda u, s: _total_verses(u) >= 75,
+    },
+    {
+        "id": "verses_200",
+        "emoji": "📕",
+        "title": "200 Oyat",
+        "desc": "200 ta oyat yodladi",
+        "bonus_xp": 750,
+        "condition": lambda u, s: _total_verses(u) >= 200,
+    },
+    {
+        "id": "verses_750",
+        "emoji": "🌠",
+        "title": "750 Oyat — Barakali",
+        "desc": "750 ta oyat yodladi",
+        "bonus_xp": 3000,
+        "condition": lambda u, s: _total_verses(u) >= 750,
+    },
+    {
+        "id": "verses_2000",
+        "emoji": "🌙",
+        "title": "2000 Oyat",
+        "desc": "2000 ta oyat yodladi",
+        "bonus_xp": 7000,
+        "condition": lambda u, s: _total_verses(u) >= 2000,
+    },
+    {
+        "id": "verses_5000",
+        "emoji": "🕌",
+        "title": "5000 Oyat — Hafizga Yo'l",
+        "desc": "5000 ta oyat yodladi",
+        "bonus_xp": 20000,
+        "condition": lambda u, s: _total_verses(u) >= 5000,
+    },
+    # ── Streak (qo'shimcha) ───────────────────────────────────────────────────
+    {
+        "id": "streak_21",
+        "emoji": "🔥",
+        "title": "21 Kunlik Odat",
+        "desc": "21 kun ketma-ket yodladi — odat hosil qildi!",
+        "bonus_xp": 700,
+        "condition": lambda u, s: _streak(u) >= 21,
+    },
+    {
+        "id": "streak_50",
+        "emoji": "🏅",
+        "title": "50 Kun — Sobitqadam",
+        "desc": "50 kun ketma-ket yodladi",
+        "bonus_xp": 2500,
+        "condition": lambda u, s: _streak(u) >= 50,
+    },
+    {
+        "id": "streak_200",
+        "emoji": "👑",
+        "title": "200 Kun — Legends",
+        "desc": "200 kun ketma-ket yodladi",
+        "bonus_xp": 15000,
+        "condition": lambda u, s: _streak(u) >= 200,
+    },
+    # ── Kunlik rekordlar ──────────────────────────────────────────────────────
+    {
+        "id": "daily_10",
+        "emoji": "⚡",
+        "title": "Bir Kunda 10 Oyat",
+        "desc": "Bir kunda 10 ta oyat yodladi",
+        "bonus_xp": 200,
+        "condition": lambda u, s: s.get("daily_max_verses", 0) >= 10,
+    },
+    {
+        "id": "daily_20",
+        "emoji": "🚀",
+        "title": "Bir Kunda 20 Oyat",
+        "desc": "Bir kunda 20 ta oyat yodladi",
+        "bonus_xp": 500,
+        "condition": lambda u, s: s.get("daily_max_verses", 0) >= 20,
+    },
+    # ── Surahlar (qo'shimcha) ─────────────────────────────────────────────────
+    {
+        "id": "surahs_3",
+        "emoji": "📃",
+        "title": "3 Sura",
+        "desc": "3 ta surani to'liq yodladi",
+        "bonus_xp": 300,
+        "condition": lambda u, s: len(_completed_surahs(u)) >= 3,
+    },
+    {
+        "id": "surahs_30",
+        "emoji": "🏯",
+        "title": "30 Sura — Juz Amma",
+        "desc": "30 ta surani to'liq yodladi (Juz Amma)",
+        "bonus_xp": 10000,
+        "condition": lambda u, s: len(_completed_surahs(u)) >= 30,
+    },
+    # ── Xatm (qo'shimcha) ─────────────────────────────────────────────────────
+    {
+        "id": "xatm_3",
+        "emoji": "🌟",
+        "title": "3 Xatm",
+        "desc": "3 ta jamoaviy xatmda ishtirok etdi",
+        "bonus_xp": 1500,
+        "condition": lambda u, s: s.get("xatm_count", 0) >= 3,
+    },
+    # ── Referral (qo'shimcha) ─────────────────────────────────────────────────
+    {
+        "id": "referral_3",
+        "emoji": "🤲",
+        "title": "3 Do'st — Qur'on Da'vati",
+        "desc": "3 ta do'stni Qur'on yodlashga taklif qildi",
+        "bonus_xp": 250,
+        "condition": lambda u, s: u.get("referral_count", 0) >= 3,
+    },
+    # ── XP (qo'shimcha) ───────────────────────────────────────────────────────
+    {
+        "id": "xp_1000",
+        "emoji": "✨",
+        "title": "1000 Himmat",
+        "desc": "1000 Himmat ball to'pladi",
+        "bonus_xp": 0,
+        "condition": lambda u, s: _himmat(u) >= 1000,
+    },
+    {
+        "id": "xp_500",
+        "emoji": "💡",
+        "title": "500 Himmat",
+        "desc": "500 Himmat ball to'pladi",
+        "bonus_xp": 0,
+        "condition": lambda u, s: _himmat(u) >= 500,
+    },
+    {
+        "id": "xp_25000",
+        "emoji": "💫",
+        "title": "25000 Himmat — Legendar",
+        "desc": "25000 Himmat ball to'pladi",
+        "bonus_xp": 0,
+        "condition": lambda u, s: _himmat(u) >= 25000,
+    },
+    # ── Vaqt (qo'shimcha) ─────────────────────────────────────────────────────
+    {
+        "id": "time_50h",
+        "emoji": "🕰️",
+        "title": "50 Soat — Taraqqiy",
+        "desc": "Jami 50 soat yodladi",
+        "bonus_xp": 1000,
+        "condition": lambda u, s: _total_minutes(u) >= 3000,
+    },
+    {
+        "id": "time_200h",
+        "emoji": "⌚",
+        "title": "200 Soat — Olim",
+        "desc": "Jami 200 soat yodladi",
+        "bonus_xp": 5000,
+        "condition": lambda u, s: _total_minutes(u) >= 12000,
+    },
 ]
 
 ACHIEVEMENT_MAP = {a["id"]: a for a in ACHIEVEMENTS}
@@ -718,15 +886,18 @@ async def show_achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
 
     categories = [
-        ("📖 Oyat Yodlash",  ["first_ayah","verses_10","verses_50","verses_100","verses_300","verses_500","verses_1000","verses_3000","full_quran"]),
-        ("📜 Surahlar",       ["first_surah","surahs_5","surahs_10","surahs_20"]),
+        ("📖 Oyat Yodlash",  ["first_ayah","verses_10","verses_25","verses_50","verses_75","verses_100",
+                              "verses_200","verses_300","verses_500","verses_750","verses_1000",
+                              "verses_2000","verses_3000","verses_5000","full_quran"]),
+        ("📜 Surahlar",       ["first_surah","surahs_3","surahs_5","surahs_10","surahs_20","surahs_30"]),
         ("🔖 Juzlar",         ["first_juz","juz_5","juz_15","juz_30"]),
-        ("🔥 Streak",         ["streak_3","streak_7","streak_14","streak_30","streak_100"]),
-        ("💫 Himmat Ball",    ["xp_500","xp_2000","xp_5000","xp_10000"]),
+        ("🔥 Streak",         ["streak_3","streak_7","streak_14","streak_21","streak_30","streak_50","streak_100","streak_200"]),
+        ("⚡ Kunlik Rekord",  ["daily_10","daily_20"]),
+        ("💫 Himmat Ball",    ["xp_500","xp_1000","xp_2000","xp_5000","xp_10000","xp_25000"]),
         ("🔄 Takrorlar",      ["reps_100","reps_1000","reps_10000"]),
-        ("⏱ Vaqt",           ["time_1h","time_10h","time_100h"]),
-        ("👥 Ijtimoiy",       ["referral_1","referral_5","referral_10"]),
-        ("🕌 Jamoaviy Xatm", ["xatm_joined","xatm_completed"]),
+        ("⏱ Vaqt",           ["time_1h","time_10h","time_50h","time_100h","time_200h"]),
+        ("👥 Ijtimoiy",       ["referral_1","referral_3","referral_5","referral_10"]),
+        ("🕌 Jamoaviy Xatm", ["xatm_joined","xatm_completed","xatm_3"]),
         ("💎 Premium",        ["premium_user"]),
     ]
 
@@ -755,11 +926,27 @@ async def show_achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lines.append(f"  🔒 {ach['emoji']} {ach['title']} — {ach['desc']}")
         lines.append("")
 
+    # CTA: show nearest locked achievement
+    nearest = get_nearest_achievement(user_id, unlocked)
+    if nearest:
+        lines.append("──────────────────────")
+        lines.append("🎯 KEYINGI MAQSADINGIZ:")
+        lines.append(f"{nearest['emoji']} {nearest['title']}")
+        lines.append(f"📌 {nearest['desc']}")
+        if nearest.get("bonus_xp", 0) > 0:
+            lines.append(f"🎁 Mukofot: +{nearest['bonus_xp']} Himmat ball")
+        lines.append("\n💪 Shu yutuqqa erishish uchun yodlashni davom eting!")
+
     text = "\n".join(lines)
 
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("↩️ Sahifamga qaytish", callback_data="profile_back")
-    ]])
+    cta_kb_rows = []
+    if nearest:
+        cta_kb_rows.append([InlineKeyboardButton(
+            f"📗 {nearest['emoji']} {nearest['title']} uchun yodlash",
+            callback_data="open_memorize"
+        )])
+    cta_kb_rows.append([InlineKeyboardButton("↩️ Sahifamga qaytish", callback_data="profile_back")])
+    keyboard = InlineKeyboardMarkup(cta_kb_rows)
 
     try:
         if query:
@@ -771,6 +958,52 @@ async def show_achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(text, reply_markup=keyboard)
         else:
             await send(text, reply_markup=keyboard)
+
+
+# ─── Nearest achievement CTA helper ──────────────────────────────────────────
+
+def get_nearest_achievement(user_id: int, unlocked: dict = None) -> dict | None:
+    """
+    Returns the locked achievement that the user is closest to unlocking.
+    Uses a simple heuristic: pick the first locked one in a sorted priority list.
+    """
+    from services.firebase_service import get_user
+    if unlocked is None:
+        unlocked = get_user_achievements(user_id)
+    user = get_user(user_id)
+    if not user:
+        return None
+    # Priority order — simpler milestones first
+    priority_order = [
+        "first_ayah", "verses_10", "verses_25", "streak_3", "streak_7",
+        "verses_50", "verses_75", "verses_100", "surahs_3", "streak_14",
+        "verses_200", "streak_21", "reps_100", "xp_500", "time_1h",
+        "surahs_5", "verses_300", "streak_30", "referral_1", "xp_1000",
+        "verses_500", "first_surah", "daily_10", "verses_750", "time_10h",
+        "surahs_10", "streak_50", "reps_1000", "xp_2000", "verses_1000",
+        "first_juz", "referral_3", "daily_20", "time_50h", "streak_100",
+        "verses_2000", "surahs_20", "xp_5000", "juz_5", "time_100h",
+        "verses_3000", "referral_5", "xatm_joined", "streak_200",
+        "surahs_30", "verses_5000", "xp_10000", "juz_15", "time_200h",
+        "reps_10000", "xp_25000", "referral_10", "xatm_3", "juz_30",
+        "xatm_completed", "full_quran",
+    ]
+    extra_signals = {}
+    for aid in priority_order:
+        if aid in unlocked:
+            continue
+        ach = ACHIEVEMENT_MAP.get(aid)
+        if not ach:
+            continue
+        # Skip signal-based ones that we can't compute here
+        if aid in ("daily_10", "daily_20", "xatm_joined", "xatm_completed", "xatm_3"):
+            continue
+        try:
+            if not ach["condition"](user, extra_signals):
+                return ach
+        except Exception:
+            continue
+    return None
 
 
 # ─── Check + notify after any activity ────────────────────────────────────────
@@ -810,6 +1043,33 @@ async def check_and_notify_achievements(bot, user_id: int, extra_signals: dict =
             broadcast_achievement(user_id, full_name, ach)
         except Exception as e:
             logger.error(f"broadcast_achievement error for {user_id}/{ach['id']}: {e}")
+
+    # After all unlocks, show CTA for the next nearest achievement
+    try:
+        unlocked_now = get_user_achievements(user_id)
+        nearest = get_nearest_achievement(user_id, unlocked_now)
+        if nearest:
+            cta_text = (
+                f"🎯 KEYINGI MAQSADINGIZ:\n\n"
+                f"{nearest['emoji']} <b>{nearest['title']}</b>\n"
+                f"📌 {nearest['desc']}"
+            )
+            if nearest.get("bonus_xp", 0) > 0:
+                cta_text += f"\n🎁 Mukofot: +{nearest['bonus_xp']} Himmat ball"
+            cta_text += "\n\n💪 Hozir yodlashni davom ettirib shu yutuqqa erishing!"
+            await bot.send_message(
+                chat_id=user_id,
+                text=cta_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton(
+                        f"📗 {nearest['emoji']} {nearest['title']} uchun yodlash",
+                        callback_data="open_memorize"
+                    )
+                ]])
+            )
+    except Exception as e:
+        logger.warning(f"CTA after achievement error for {user_id}: {e}")
 
 
 # ─── Register handlers ────────────────────────────────────────────────────────

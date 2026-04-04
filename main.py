@@ -43,6 +43,7 @@ from handlers.notifications import (
     register_notification_handlers, send_daily_notifications,
     send_xatm_invitation, send_daily_top5,
     send_weekly_top10, send_monthly_top10, send_admin_daily_report,
+    send_daily_xatm_reminder, refresh_all_pinned_messages,
 )
 from handlers.contact import build_contact_handler, register_contact_callbacks
 from handlers.xatm import register_xatm_handlers
@@ -180,6 +181,28 @@ def setup_scheduler(app: Application):
         _flush_congrats,
         "interval", minutes=30,
         id="flush_congrats_queue",
+        replace_existing=True,
+    )
+
+    # Daily Xatm reminder — 09:00 Tashkent
+    async def _xatm_reminder():
+        await send_daily_xatm_reminder(app.bot)
+
+    scheduler.add_job(
+        _xatm_reminder,
+        CronTrigger(hour=9, minute=0, timezone=TZ),
+        id="daily_xatm_reminder",
+        replace_existing=True,
+    )
+
+    # Refresh pinned progress messages — 08:30 Tashkent
+    async def _refresh_pinned():
+        await refresh_all_pinned_messages(app.bot)
+
+    scheduler.add_job(
+        _refresh_pinned,
+        CronTrigger(hour=8, minute=30, timezone=TZ),
+        id="refresh_pinned_msgs",
         replace_existing=True,
     )
 

@@ -222,11 +222,21 @@ async def _process_referral(message, new_user_id: int, ref_code: str,
     increment_referral_count(referrer_id)
     award_points(new_user_id, REFERRAL_BONUS, "referral_joined")
 
+    # Grant referrer 1 day of free premium for inviting a friend
+    try:
+        from services.premium_service import activate_premium
+        activate_premium(referrer_id, days=1)
+    except Exception as e:
+        logger.warning(f"Could not grant referral premium to {referrer_id}: {e}")
+
     # Notify referrer
     try:
         await context.bot.send_message(
             chat_id=referrer_id,
-            text=referral_bonus_message(new_user_name, new_total)
+            text=(
+                f"{referral_bonus_message(new_user_name, new_total)}\n\n"
+                f"🎁 Bonus: Do'stingiz qo'shilgani uchun sizga 1 kun bepul Premium berildi! 💎"
+            )
         )
     except Exception as e:
         logger.warning(f"Could not notify referrer {referrer_id}: {e}")

@@ -312,6 +312,12 @@ def premium_menu_message(is_active: bool, expiry: Optional[str]) -> str:
         f"  ✔ VIP belgisi va ajralib turish\n\n"
         f"🎁 Yoki: 1 do'st taklif qiling → 1 kun bepul!\n\n"
         f"──────────────────\n"
+        f"ℹ️ Bu narx server xarajatlari, dastur yozish,\n"
+        f"   texnik xizmat ko'rsatish va loyihani\n"
+        f"   rivojlantirish uchun sarflanadi.\n"
+        f"   Har bir to'lov imkoniyati cheklangan\n"
+        f"   foydalanuvchilar uchun bepul yodlash\n"
+        f"   imkoniyatlarini kengaytirishga yordam beradi 🤲\n\n"
         f"📞 To'lov va faollashtirish uchun adminiga murojaat qiling."
     )
 

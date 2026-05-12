@@ -183,20 +183,48 @@ async def onboarding_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Notify admin about new user
     try:
         from services.firebase_service import get_all_users
-        total_users = len(get_all_users())
-        username_str = f"@{query.from_user.username}" if query.from_user.username else "—"
+        all_users    = get_all_users()
+        total_users  = len(all_users)
+        premium_count = sum(1 for u in all_users if u.get("premium", {}).get("is_active"))
+        username_str  = f"@{query.from_user.username}" if query.from_user.username else "—"
+        ref_code      = context.user_data.get("referral_code")
+        ref_str       = f"🔗 Taklif orqali keldi: ref_{ref_code}" if ref_code else "📲 To'g'ridan-to'g'ri"
+        ob_level      = context.user_data.get("ob_level", {})
+        juz_done      = ob_level.get("juz_count", 0)
+        level_str     = f"{juz_done} juz yodlagan" if juz_done else "Yangi boshlovchi"
+        goal_str      = context.user_data.get("ob_goal", "—")
+        location_str  = context.user_data.get("ob_location", "—")
+
         await context.bot.send_message(
             chat_id=ADMIN_ID,
             text=(
                 f"👤 YANGI FOYDALANUVCHI!\n\n"
-                f"Ism: {full_name}\n"
-                f"Username: {username_str}\n"
-                f"ID: {user_id}\n\n"
-                f"📊 Jami foydalanuvchilar: {total_users}"
+                f"📛 Ism:      {full_name}\n"
+                f"🔗 Username: {username_str}\n"
+                f"🆔 ID:       {user_id}\n"
+                f"📍 Joylashuv: {location_str}\n"
+                f"📖 Daraja:   {level_str}\n"
+                f"🎯 Maqsad:   {goal_str[:60] if goal_str else '—'}\n"
+                f"{ref_str}\n\n"
+                f"─────────────────────────\n"
+                f"📊 Jami foydalanuvchilar: {total_users}\n"
+                f"💎 Premium a'zolar: {premium_count}\n"
+                f"─────────────────────────\n"
+                f"🆕 BOT VERSIYASI — YANGI FUNKSIYALAR:\n"
+                f"  • 💎 Premium: 17 900 so'm/oy — CHEKSIZ\n"
+                f"  • ⚡ Premium 2x Himmat ball\n"
+                f"  • 🤝 Do'st taklif → 1 kun bepul Premium\n"
+                f"  • 📌 Pinned progress dashboard\n"
+                f"  • 🏆 Reyting: Bugun/Hafta/Oy/Yil/Umumiy\n"
+                f"  • 🫥 Anonimlik toggle (Sozlamalarda)\n"
+                f"  • 🕌 Jamoaviy Xatm kunlik eslatma\n"
+                f"  • 📿 30+ Qur'on/Hadis iqtiboslari\n"
+                f"  • 🎯 20+ Achievement (yutuq) tizimlari\n"
             )
         )
     except Exception as e:
         logger.warning(f"Could not notify admin of new user: {e}")
+
 
     # Handle referral reward
     referral_code = context.user_data.get("referral_code")

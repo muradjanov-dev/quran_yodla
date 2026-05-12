@@ -24,10 +24,11 @@ RELEASE_NOTES = """
 🚀 BOT YANGILANDI!
 
 🆕 YANGI:
-• 🏆 30 ta yutuq (achievement) tizimi
-• 📊 Haftalik musobaqa — har hafta top-5
-• 🤝 Yutuqlarga boshqa userlardan tabrik
-• ⭐ Har yutuq uchun qo'shimcha XP
+• 📋 Istalgan surani to'g'ridan-to'g'ri tanlash (114 sura)
+• ▶️ Har sura oxirgi to'xtagan oyatidan davom etadi
+• 🏆 Yutuq bildirishnomalari — kuniga max 1 ta (ortiq spam yo'q)
+• 📊 Kunlik hisobot: to'g'ri oyat/takror ko'rsatkichlari
+• 👤 Yangi user qo'shilganda admin notif oladi
 """
 
 # ─── Handlers ──────────────────────────────────────────────────────────────────

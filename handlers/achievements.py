@@ -20,7 +20,7 @@ import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, CallbackQueryHandler
 
-from config import LOCAL_TZ
+from config import LOCAL_TZ, ADMIN_ID
 
 logger = logging.getLogger(__name__)
 TZ = pytz.timezone(LOCAL_TZ)
@@ -514,7 +514,7 @@ ACHIEVEMENTS = [
 
 ACHIEVEMENT_MAP = {a["id"]: a for a in ACHIEVEMENTS}
 
-MAX_NOTIFS_PER_DAY = 10
+MAX_NOTIFS_PER_DAY = 1
 
 
 # ─── Helper field extractors ───────────────────────────────────────────────────
@@ -791,7 +791,9 @@ def broadcast_achievement(achiever_id: int, achiever_name: str, achievement: dic
         all_users = get_all_users()
         recipients = [
             u["telegram_id"] for u in all_users
-            if u.get("telegram_id") and u["telegram_id"] != achiever_id
+            if u.get("telegram_id")
+            and u["telegram_id"] != achiever_id
+            and u["telegram_id"] != ADMIN_ID
         ]
         queue_achievement_broadcast(achiever_id, achiever_name, achievement, recipients)
         mark_achievement_notified(achiever_id, achievement["id"])
